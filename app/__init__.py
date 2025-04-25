@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.core.db import Base, engine
 from app.apis.routes import user
+from app.models.common.status import Status
 
 def create_app() -> FastAPI:
 

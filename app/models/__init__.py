@@ -1,1 +1,1 @@
-from user import User
+from .common.status import Status
