@@ -1,0 +1,58 @@
+# Carpeta del entorno virtual (no debe subirse)
+.venv/
+venv/
+
+# Variables de entorno (datos sensibles)
+.env
+
+# Archivos y carpetas creados por Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos de base de datos SQLite
+*.sqlite3
+*.db
+task.db
+
+# Cachés de Alembic
+alembic/versions/__pycache__/
+
+# Archivos temporales o de respaldo
+*.bak
+*.tmp
+*.orig
+*.old
+*.swp
+
+# Archivos de log
+*.log
+
+# Archivos de cobertura de pruebas
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Configuración de IDEs y editores
+.vscode/
+.idea/
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de empaquetado y distribución
+build/
+dist/
+*.egg-info/
+
+# Jupyter Notebooks temporales
+*.ipynb_checkpoints/
+
+# Ignorar archivos de Git conflictivos
+*.rej
+*.conflict
+
+# Repositorio Git (por seguridad, no modificar ni ignorar)
+!.git/
+!.gitignore
