@@ -1,8 +1,7 @@
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from app.cores.db import Base, engine
-from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
-from app.cores.db import engine, Base
 
 from app.models.common.status import Status
 from app.models.common.role import Role
@@ -33,19 +32,28 @@ from app.apis.auths.register_api import register_teacher_route
 
 from app.apis.auths.register_api import router as register_router
 
+
+''' Manejador del ciclo de vida de la aplicación FastAPI 
+    Lo que ase es separa la parte de la configuracion de la base de datos
+'''
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    await create_status()
+    await create_modality()
+    await create_role()
+    await create_educational_level()
+
+    yield
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="onlyCation")
-
-    @app.on_event("startup")
-    async def startup_event():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        
-        await create_status()
-        await create_modality()
-        await create_role()
-        await create_educational_level()
-
+    app = FastAPI(
+        title="onlyCation", 
+        lifespan=lifespan  
+    )
     app.include_router(register_router, prefix="/api/auth", tags=["Auth"])
 
     return app

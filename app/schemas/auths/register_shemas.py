@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 
 class RegisterUserRequest(BaseModel):
     first_name: str
@@ -6,5 +6,4 @@ class RegisterUserRequest(BaseModel):
     email: EmailStr
     password: str
 
-    class Config:
-        from_attributes = True  # Cambiado de orm_mode a from_attributes
+    model_config = ConfigDict(from_attributes=True)
