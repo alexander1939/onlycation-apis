@@ -5,3 +5,8 @@ No subir .env y alembic.ini subir comando de alembic
 
 
 uvicorn app.main:app --reload
+
+
+
+///este las validacion que no este revuelvas y cehcar el await
+

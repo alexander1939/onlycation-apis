@@ -1,0 +1,1 @@
+from .register_api import register_student_route,register_teacher_route

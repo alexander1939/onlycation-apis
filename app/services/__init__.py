@@ -1,0 +1,1 @@
+from .auths.register_service import RegisterUserRequest
