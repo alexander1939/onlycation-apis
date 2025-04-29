@@ -12,3 +12,8 @@ async def role_not_found_exception(role_name: str) -> None:
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Role '{role_name}' not found"
     )
+async def status_not_found_exception(status_name: str) -> None:
+    raise HTTPException(
+        status_code=404,
+        detail=f"Status '{status_name}' not found"
+    )

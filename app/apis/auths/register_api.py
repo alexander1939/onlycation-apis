@@ -10,8 +10,8 @@ router = APIRouter()
 
 @router.post("/register/student/")
 async def register_student_route(request: RegisterUserRequest, db: AsyncSession = Depends(get_db)):
-    return await register_user(request, "student", db)
+    return await register_user(request, "student", "active" ,db)
 
 @router.post("/register/teacher/")
 async def register_teacher_route(request: RegisterUserRequest, db: AsyncSession = Depends(get_db)):
-    return await register_user(request, "teacher", db)
+    return await register_user(request, "teacher", "inactive", db)
