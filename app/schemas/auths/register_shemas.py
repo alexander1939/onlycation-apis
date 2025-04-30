@@ -5,5 +5,6 @@ class RegisterUserRequest(BaseModel):
     last_name: str
     email: EmailStr
     password: str
-
+    privacy_policy_accepted: bool
+    
     model_config = ConfigDict(from_attributes=True)

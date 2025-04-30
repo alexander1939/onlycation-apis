@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.models import User, Role, Status, Student, Teacher
 from app.schemas.auths.register_shemas import RegisterUserRequest
-from app.services.validation.validate_password import validate_password
+from app.services.validation.register_validater import validate_password,validate_privacy_policy_accepted,validate_first_name, validate_last_name
 from app.services.validation.exception import email_already_registered_exception, role_not_found_exception, status_not_found_exception, unexpected_exception
 from app.cores.security import get_password_hash
 from fastapi import HTTPException
@@ -27,7 +27,8 @@ async def create_teacher(user: User, status: Status, db: AsyncSession):
     await db.commit()
 
 async def register_user(request: RegisterUserRequest, role_name: str, status_name: str, db: AsyncSession) -> str:
-    try:
+    try:        
+
         result = await db.execute(select(User).filter(User.email == request.email))
         if result.scalars().first():
             await email_already_registered_exception()
@@ -43,6 +44,9 @@ async def register_user(request: RegisterUserRequest, role_name: str, status_nam
             await status_not_found_exception(status_name)
 
         await validate_password(request.password)
+        await validate_first_name(request.first_name)
+        await validate_last_name(request.last_name)
+        await validate_privacy_policy_accepted(request.privacy_policy_accepted)
 
         new_user = User(
             first_name=request.first_name,
