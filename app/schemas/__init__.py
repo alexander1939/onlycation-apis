@@ -1,1 +1,1 @@
-from .auths.register_shemas import RegisterUserRequest
+from .auths.register_shema import RegisterUserRequest

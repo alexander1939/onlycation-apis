@@ -8,5 +8,5 @@ uvicorn app.main:app --reload
 
 
 
-///este las validacion que no este revuelvas y cehcar el await
+//poner mas bonito el error 500
 

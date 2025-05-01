@@ -25,12 +25,12 @@ from app.scripts.databases.create_role import create_role
 from app.scripts.databases.create_educational_level import create_educational_level
 from app.scripts.databases.create_modality import create_modality
 
-from app.schemas.auths.register_shemas import RegisterUserRequest
+from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.auths.register_service import RegisterUserRequest
-from app.apis.auths.register_api import register_student_route
-from app.apis.auths.register_api import register_teacher_route
+from app.apis.auth_api import register_student_route
+from app.apis.auth_api import register_teacher_route
 
-from app.apis.auths.register_api import router as register_router
+from app.apis.auth_api import router as auth_router
 
 
 ''' Manejador del ciclo de vida de la aplicación FastAPI 
@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
         title="onlyCation", 
         lifespan=lifespan  
     )
-    app.include_router(register_router, prefix="/api/auth", tags=["Auth"])
+
+    app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 
     return app

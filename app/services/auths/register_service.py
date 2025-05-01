@@ -1,78 +1,78 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.models import User, Role, Status, Student, Teacher
-from app.schemas.auths.register_shemas import RegisterUserRequest
+from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.validation.register_validater import validate_password,validate_privacy_policy_accepted,validate_first_name, validate_last_name
 from app.services.validation.exception import email_already_registered_exception, role_not_found_exception, status_not_found_exception, unexpected_exception
 from app.cores.security import get_password_hash
 from fastapi import HTTPException
 
 
-async def create_student(user: User, status: Status, db: AsyncSession):
+async def create_student(user: User, db: AsyncSession):
     """Crea un registro en la tabla Student"""
-    new_student = Student(
-        users_id=user.id,
-        statuses_id=status.id
-    )
+    new_student = Student(users_id=user.id)
     db.add(new_student)
-    await db.commit()
 
-async def create_teacher(user: User, status: Status, db: AsyncSession):
+
+async def create_teacher(user: User, db: AsyncSession):
     """Crea un registro en la tabla Teacher"""
-    new_teacher = Teacher(
-        users_id=user.id,
-        statuses_id=status.id
-    )
+    new_teacher = Teacher(users_id=user.id)
     db.add(new_teacher)
-    await db.commit()
 
-async def register_user(request: RegisterUserRequest, role_name: str, status_name: str, db: AsyncSession) -> str:
-    try:        
 
-        result = await db.execute(select(User).filter(User.email == request.email))
-        if result.scalars().first():
-            await email_already_registered_exception()
+async def register_user(request: RegisterUserRequest, role_name: str, status_name: str, db: AsyncSession) -> User:
+    try:
+        async with db.begin():  
 
-        result = await db.execute(select(Role).filter(Role.name == role_name))
-        role = result.scalars().first()
-        if not role:
-            await role_not_found_exception(role_name)
+            result = await db.execute(select(User).filter(User.email == request.email))
+            if result.scalars().first():
+                await email_already_registered_exception()
 
-        result = await db.execute(select(Status).filter(Status.name == status_name))
-        status_obj = result.scalars().first()
-        if not status_obj:
-            await status_not_found_exception(status_name)
+            result = await db.execute(select(Role).filter(Role.name == role_name))
+            role = result.scalars().first()
+            if not role:
+                await role_not_found_exception(role_name)
 
-        await validate_password(request.password)
-        await validate_first_name(request.first_name)
-        await validate_last_name(request.last_name)
-        await validate_privacy_policy_accepted(request.privacy_policy_accepted)
+            result = await db.execute(select(Status).filter(Status.name == status_name))
+            status = result.scalars().first()
+            if not status:
+                await status_not_found_exception(status_name)
 
-        new_user = User(
-            first_name=request.first_name,
-            last_name=request.last_name,
-            email=request.email,
-            password=get_password_hash(request.password),
-            roles_id=role.id
-        )
-    
-        db.add(new_user)
-        await db.commit()
-        await db.refresh(new_user)
+            await validate_password(request.password)
+            await validate_first_name(request.first_name)
+            await validate_last_name(request.last_name)
+            await validate_privacy_policy_accepted(request.privacy_policy_accepted)
 
-        if role_name == "student":
-            await create_student(new_user, status_obj, db)
-        elif role_name == "teacher":
-            await create_teacher(new_user, status_obj, db)
-        else:
-            raise ValueError(f"Rol no soportado: {role_name}")
+            new_user = User(
+                first_name=request.first_name,
+                last_name=request.last_name,
+                email=request.email,
+                password=get_password_hash(request.password),
+                roles_id=role.id,
+                statuses_id=status.id
+            )
 
-        return {
-            "success": f"User {new_user.first_name} {new_user.last_name} registered successfully.",
-        }
-    
+            db.add(new_user)
+            await db.flush()  
+
+            if role_name == "student":
+                await create_student(new_user, db)
+            elif role_name == "teacher":
+                await create_teacher(new_user, db)
+            else:
+                raise ValueError(f"Rol no soportado: {role_name}")
+
+            await db.refresh(new_user)
+
+            return new_user
+
     except HTTPException as e:
-        raise e 
-
+        raise e
     except Exception:
         await unexpected_exception()
+
+    '''except Exception as e:
+        import traceback
+        print("ERROR:", e)
+        traceback.print_exc()
+        raise e  '''

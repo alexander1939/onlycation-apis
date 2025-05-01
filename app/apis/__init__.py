@@ -1,0 +1,1 @@
+from .auth_api import register_student_route, register_teacher_route

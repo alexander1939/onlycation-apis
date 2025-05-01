@@ -12,3 +12,5 @@ pytest
 httpx
 pytest-asyncio
 pytest-flake8
+python-jose[cryptography]
+fastapi-mail
