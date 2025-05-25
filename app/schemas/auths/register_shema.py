@@ -1,5 +1,8 @@
 from pydantic import BaseModel, EmailStr, ConfigDict
 
+"""
+Modelo que representa la estructura de datos recibida y enviara en una solicitud den las apis de register
+"""
 class RegisterUserRequest(BaseModel):
     first_name: str
     last_name: str
@@ -12,7 +15,7 @@ class RegisterUserRequest(BaseModel):
 class RegisterUserData(BaseModel):
     first_name: str
     last_name: str
-    emails: EmailStr
+    email: EmailStr
 
 
 class RegisterUserResponse(BaseModel):

@@ -16,6 +16,11 @@ from app.services.externals.email_service import send_email
 router = APIRouter()
 
 
+"""
+Ruta para registrar un nuevo estudiante.
+    - Crea un usuario con rol "student" y estado "active".
+    - Retorna datos básicos del usuario registrado.
+"""
 @router.post("/register/student/", response_model=RegisterUserResponse)
 async def register_student_route(request: RegisterUserRequest, db: AsyncSession = Depends(get_db)):
     new_user = await register_user(request, "student", "active" ,db)
@@ -30,6 +35,11 @@ async def register_student_route(request: RegisterUserRequest, db: AsyncSession 
         }
     }
 
+"""
+Ruta para registrar un nuevo profesor.
+    - Crea un usuario con rol "teacher" y estado "pending".
+    - Retorna los datos del profesor registrado.
+"""
 @router.post("/register/teacher/")
 async def register_teacher_route(request: RegisterUserRequest, db: AsyncSession = Depends(get_db)):
     new_user = await register_user(request, "teacher", "pending", db)
@@ -44,6 +54,12 @@ async def register_teacher_route(request: RegisterUserRequest, db: AsyncSession 
         }
     }
 
+
+"""
+Ruta para iniciar sesión.
+    - Verifica las credenciales y genera un token de acceso.
+    - Devuelve el token, tipo de token y algunos datos del usuario.
+"""
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     token, user = await login_user(db, request.email, request.password)

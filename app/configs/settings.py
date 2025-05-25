@@ -1,7 +1,12 @@
 from pydantic import ConfigDict, EmailStr
 from pydantic_settings import BaseSettings
 
-
+"""
+Se carga automáticamente desde el archivo `.env` o las variables de entorno del sistema.
+    - Define y carga la configuración principal de la aplicación desde variables de entorno.
+    - Incluye parámetros para la base de datos, seguridad y configuración del correo electrónico.
+    - Configuracion global
+"""
 class Settings(BaseSettings):
     SQLALCHEMY_DATABASE_URI: str
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False

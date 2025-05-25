@@ -2,6 +2,8 @@
 .venv/
 venv/
 
+alembic.ini
+
 # Variables de entorno (datos sensibles)
 .env
 

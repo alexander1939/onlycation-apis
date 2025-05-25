@@ -1,3 +1,7 @@
+"""
+Modelo que representa la estructura de datos recibida y enviara en una solicitud den las apis de auth
+"""
+
 from pydantic import BaseModel, EmailStr
 
 class LoginRequest(BaseModel):
