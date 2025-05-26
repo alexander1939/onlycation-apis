@@ -8,9 +8,9 @@ async def create_status():
     db: AsyncSession = async_session()
     try:
         result = await db.execute(select(Status))
-        statuses = result.scalars().all()
+        status = result.scalars().all()
         
-        if not statuses:
+        if not status:
             status_list = [
                 Status(name="active"),
                 Status(name="inactive"),

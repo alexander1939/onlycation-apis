@@ -11,11 +11,11 @@ class Role(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(20), index=True)
     description = Column(String(50))
-    statuses_id = Column(Integer, ForeignKey("statuses.id"))
+    status_id = Column(Integer, ForeignKey("statuses.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    statuses = relationship("Status", backref="roles")  
+    status = relationship("Status", backref="roles")  
     
     def __repr__(self):
         return f"<Role(name={self.name}, description={self.description})>"

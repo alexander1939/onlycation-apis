@@ -1,23 +1,12 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.models import User, Role, Status, Student, Teacher
+from app.models import User, Role, Status
 from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.validation.register_validater import validate_password,validate_privacy_policy_accepted,validate_first_name, validate_last_name
 from app.services.validation.exception import email_already_registered_exception, role_not_found_exception, status_not_found_exception, unexpected_exception
 from app.cores.security import get_password_hash
 from fastapi import HTTPException
 
-
-async def create_student(user: User, db: AsyncSession):
-    """Crea un registro en la tabla Student"""
-    new_student = Student(users_id=user.id)
-    db.add(new_student)
-
-
-async def create_teacher(user: User, db: AsyncSession):
-    """Crea un registro en la tabla Teacher"""
-    new_teacher = Teacher(users_id=user.id)
-    db.add(new_teacher)
 
 
 async def register_user(request: RegisterUserRequest, role_name: str, status_name: str, db: AsyncSession) -> User:
@@ -48,19 +37,13 @@ async def register_user(request: RegisterUserRequest, role_name: str, status_nam
                 last_name=request.last_name,
                 email=request.email,
                 password=get_password_hash(request.password),
-                roles_id=role.id,
-                statuses_id=status.id
+                role_id=role.id,
+                status_id=status.id
             )
 
             db.add(new_user)
             await db.flush()  
 
-            if role_name == "student":
-                await create_student(new_user, db)
-            elif role_name == "teacher":
-                await create_teacher(new_user, db)
-            else:
-                raise ValueError(f"Rol no soportado: {role_name}")
 
             await db.refresh(new_user)
 

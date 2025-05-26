@@ -12,18 +12,18 @@ from app.models.common.status import Status
 from app.models.common.role import Role
 from app.models.common.modality import Modality
 from app.models.common.educational_level import EducationalLevel
+from app.models.common.verification_code import VerificationCode
+from app.models.common.price_range import PriceRange
 
 from app.models.users.user import User
 from app.models.users.preference import Preference
 
 
-from app.models.teachers.teacher import Teacher
 from app.models.teachers.teacher_document import TeacherDocument
 from app.models.teachers.teacher_price import TeacherPrice
 from app.models.teachers.teacher_video import TeacherVideo
 
 
-from app.models.students.student import Student
 
 from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_role import create_role

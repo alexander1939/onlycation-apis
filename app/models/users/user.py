@@ -12,13 +12,13 @@ class User(Base):
     email = Column(String(120), unique=True, nullable=False, index=True)
     password = Column(String(255), nullable=False)
     privacy_policy_accepted = Column(Boolean, nullable=False, default=True, server_default="true")
-    roles_id = Column(Integer, ForeignKey("roles.id"))
-    statuses_id = Column(Integer, ForeignKey("statuses.id"), nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id"))
+    status_id = Column(Integer, ForeignKey("statuses.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    roles = relationship("Role", backref="users")
-    statuses = relationship("Status", backref="users")
+    role = relationship("Role", backref="users")
+    status = relationship("Status", backref="users")
 
 
     def __repr__(self):

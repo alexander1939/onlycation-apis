@@ -25,17 +25,17 @@ async def create_role():
                 Role(
                     name="teacher",
                     description="Professional responsible for tutoring...",
-                    statuses_id=active_status.id
+                    status_id=active_status.id
                 ),
                 Role(
                     name="student",
                     description="Primary beneficiary of the system...",
-                    statuses_id=active_status.id
+                    status_id=active_status.id
                 ),
                 Role(
                     name="admin",
                     description="Manages system operations...",
-                    statuses_id=active_status.id
+                    status_id=active_status.id
                 )
             ]
             

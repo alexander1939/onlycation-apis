@@ -15,24 +15,24 @@ async def create_educational_level():
             status_result = await db.execute(
                 select(Status).where(Status.name == "active")
             )
-            active_statuses = status_result.scalars().first()
+            active_status = status_result.scalars().first()
             
-            if not active_statuses:
+            if not active_status:
                 print("Error: 'active' status not found. Please create statuses first.")
                 return
 
             levels_list = [
                 EducationalLevel(
                     name="Preparatoria",
-                    statuses_id=active_statuses.id
+                    status_id=active_status.id
                 ),
                 EducationalLevel(
                     name="Universidad",
-                    statuses_id=active_statuses.id
+                    status_id=active_status.id
                 ),
                 EducationalLevel(
                     name="Posgrado",
-                    statuses_id=active_statuses.id
+                    status_id=active_status.id
                 )
             ]
             

@@ -15,9 +15,9 @@ async def create_modality():
             status_result = await db.execute(
                 select(Status).where(Status.name == "active")
             )
-            active_statuses = status_result.scalars().first()
+            active_status = status_result.scalars().first()
             
-            if not active_statuses:
+            if not active_status:
                 print("Error: 'active' status not found. Create statuses first.")
                 return
 
@@ -25,11 +25,11 @@ async def create_modality():
             modalities_list = [
                 Modality(
                     name="In-person",
-                    statuses_id=active_statuses.id
+                    status_id=active_status.id
                 ),
                 Modality(
                     name="online",
-                    statuses_id=active_statuses.id
+                    status_id=active_status.id
                 )
             ]
             
