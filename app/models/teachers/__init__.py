@@ -1,3 +1,3 @@
-from .teacher_document import TeacherDocument
-from .teacher_price import TeacherPrice
-from .teacher_video import TeacherVideo
+from .document import Document
+from .price import Price
+from .video import Video

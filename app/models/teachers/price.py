@@ -3,8 +3,8 @@ from sqlalchemy.orm import relationship
 from app.cores.db import Base
 from sqlalchemy.sql import func
 
-class TeacherPrice(Base):
-    __tablename__ = "teacher_prices"
+class Price(Base):
+    __tablename__ = "prices"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)

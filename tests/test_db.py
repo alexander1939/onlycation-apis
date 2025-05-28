@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from app.models import Role,Status,students,EducationalLevel,Preference,Modality,TeacherDocument,TeacherPrice,TeacherVideo,PriceRange
+from app.models import Role,Status,students,EducationalLevel,Preference,Modality,Document,Price,Video,PriceRange
 from app.cores.db import Base
 
 # Base de datos de prueba (en memoria)

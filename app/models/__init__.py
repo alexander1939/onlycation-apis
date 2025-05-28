@@ -8,7 +8,17 @@ from .common.verification_code import VerificationCode
 from .users.user import User
 from .users.preference import Preference
 
-from .teachers.teacher_document import TeacherDocument
-from .teachers.teacher_price import TeacherPrice
-from .teachers.teacher_video import TeacherVideo
+from .teachers.document import Document
+from .teachers.price import Price
+from .teachers.video import Video
+
+
+from .privileges.privilege import Privilege
+from .privileges.privilege_role import PrivilegeRole
+from .privileges.privilege_user import PrivilegeUser
+
+from .subscriptions.benefit import Benefit
+from .subscriptions.plan import Plan
+from .subscriptions.subscription import Subscription
+from .subscriptions.payment_subscription import PaymentSubscription
 

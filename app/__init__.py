@@ -19,11 +19,19 @@ from app.models.users.user import User
 from app.models.users.preference import Preference
 
 
-from app.models.teachers.teacher_document import TeacherDocument
-from app.models.teachers.teacher_price import TeacherPrice
-from app.models.teachers.teacher_video import TeacherVideo
+from app.models.teachers.document import Document
+from app.models.teachers.price import Price
+from app.models.teachers.video import Video
 
 
+from app.models.privileges.privilege import Privilege
+from app.models.privileges.privilege_role import PrivilegeRole
+from app.models.privileges.privilege_user import PrivilegeUser
+
+from app.models.subscriptions.benefit import Benefit
+from app.models.subscriptions.plan import Plan
+from app.models.subscriptions.subscription import Subscription
+from app.models.subscriptions.payment_subscription import PaymentSubscription
 
 from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_role import create_role

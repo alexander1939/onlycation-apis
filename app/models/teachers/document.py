@@ -5,8 +5,8 @@ from sqlalchemy.types import DateTime
 
 from app.cores.db import Base
 
-class TeacherDocument(Base):
-    __tablename__ = "teacher_documents"
+class Document(Base):
+    __tablename__ = "documents"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
