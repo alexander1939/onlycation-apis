@@ -13,8 +13,7 @@ class LoginData(BaseModel):
     token_type: str = "bearer"
     email: EmailStr
     first_name: str
-    status: str 
-
+    last_name: str
 class LoginResponse(BaseModel):
     success: bool
     message: str

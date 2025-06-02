@@ -60,7 +60,7 @@ Ruta para iniciar sesión.
     - Verifica las credenciales y genera un token de acceso.
     - Devuelve el token, tipo de token y algunos datos del usuario.
 """
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login/", response_model=LoginResponse)
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     token, user = await login_user(db, request.email, request.password)
     return {
@@ -71,7 +71,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             "token_type": "bearer",
             "email": user.email,
             "first_name": user.first_name,
-            "status": user.statuses.name, 
+            "last_name": user.last_name,
         }
     }
 

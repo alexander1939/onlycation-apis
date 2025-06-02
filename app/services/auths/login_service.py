@@ -13,7 +13,7 @@ async def authenticate_user(db: AsyncSession, email: str, password: str):
     result = await db.execute(
         select(User)
         .where(User.email == email)
-        .options(joinedload(User.roles), joinedload(User.statuses))  
+        .options(joinedload(User.role), joinedload(User.status))  
     )
     user = result.scalar_one_or_none()
 
@@ -28,18 +28,20 @@ async def login_user(db: AsyncSession, email: str, password: str):
         token = create_access_token(data={
             "user_id": user.id,
             "email": user.email,
-            "role": user.roles.name,  
-            "statuses": user.statuses.name  
+            "role": user.role.name,  
+            "statuses": user.status.name  
         })
         return token, user
     
-    except HTTPException as e:
-        raise e
-    except Exception:
-        await unexpected_exception()
-
-    '''except Exception as e:
+    except Exception as e:
         import traceback
         print("ERROR:", e)
         traceback.print_exc()
-        raise e  '''
+        raise e  
+
+    '''except HTTPException as e:
+        raise e
+    except Exception:
+        await unexpected_exception()'''
+
+    
