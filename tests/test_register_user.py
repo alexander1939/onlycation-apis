@@ -27,7 +27,7 @@ async def test_register_student():
         response = await client.post("/api/auth/register/student/", json={
             "first_name": "Luis",
             "last_name": "Cruz",
-            "email": "luis@tes1t.com",
+            "email": "luis@tes12t.com",
             "password": "Password123!!",
             "privacy_policy_accepted": True,
         })
