@@ -10,6 +10,7 @@ class LoginRequest(BaseModel):
 
 class LoginData(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     email: EmailStr
     first_name: str
