@@ -36,19 +36,35 @@ async def login_user(db: AsyncSession, email: str, password: str):
         }
 
         access_token = create_access_token(data=token_data)
-        refresh_token = create_refresh_token(data=token_data)
 
-        code_entry = VerificationCode(
-        email=user.email,
-        role=user.role.name,
-        purpose="refresh_token",
-        code=refresh_token,
-        used=False,
-        expires_at=datetime.utcnow() + timedelta(days=7)
+        result = await db.execute(
+            select(VerificationCode).where(
+                VerificationCode.email == user.email,
+                VerificationCode.purpose == "refresh_token",
+                VerificationCode.used == False,
+                VerificationCode.expires_at > datetime.utcnow()
+            ).order_by(VerificationCode.expires_at.desc())
         )
 
-        db.add(code_entry)
-        await db.commit()
+        existing_refresh = result.scalar_one_or_none()
+
+        if existing_refresh:
+            refresh_token = existing_refresh.code
+        else:
+            refresh_token = create_refresh_token(data=token_data)
+
+            code_entry = VerificationCode(
+                email=user.email,
+                role=user.role.name,
+                purpose="refresh_token",
+                code=refresh_token,
+                used=False,
+                expires_at=datetime.utcnow() + timedelta(days=7)
+            )
+
+
+            db.add(code_entry)
+            await db.commit()
 
         return access_token, refresh_token, user
 
