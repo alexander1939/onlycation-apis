@@ -62,12 +62,13 @@ Ruta para iniciar sesión.
 """
 @router.post("/login/", response_model=LoginResponse)
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
-    token, user = await login_user(db, request.email, request.password)
+    access_token, refresh_token, user = await login_user(db, request.email, request.password)
     return {
         "success": True,
         "message": "Login exitoso",
         "data": {
-            "access_token": token,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "email": user.email,
             "first_name": user.first_name,
