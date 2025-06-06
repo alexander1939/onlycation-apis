@@ -1,7 +1,9 @@
 
 from fastapi import APIRouter, Depends
 from app.schemas.auths.logout_sheme import DefaultResponse, LogoutRequest
+from app.schemas.auths.refresh_token import RefreshTokenRequest
 from app.services.auths.logout_service import logout_user
+from app.services.auths.refresh_token_service import refresh_access_token
 from app.services.auths.register_service import register_user
 from app.schemas.auths.register_shema import RegisterUserRequest, RegisterUserResponse
 from app.apis.deps import get_db
@@ -91,10 +93,22 @@ async def logout(request: LogoutRequest, db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.post("/send")
-async def send_email_api(email: EmailSchema):
-    try:
-        await send_email(email)
-        return {"success": True, "message": "Correo enviado correctamente"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al enviar el correo: {str(e)}")
+@router.post("/refresh-token/")
+async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    access_token, payload = await refresh_access_token(db, request.token)
+    return {
+        "success": True,
+        "message": "Token renovado exitosamente",
+        "data": {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+    }
+
+# @router.post("/send")
+# async def send_email_api(email: EmailSchema):
+#     try:
+#         await send_email(email)
+#         return {"success": True, "message": "Correo enviado correctamente"}
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Error al enviar el correo: {str(e)}")

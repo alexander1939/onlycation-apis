@@ -1,48 +1,40 @@
-from jose import ExpiredSignatureError, JWTError
-from app.cores.token import verify_token, create_access_token
-from app.models.common.verification_code import VerificationCode
+from datetime import datetime
+from jose import JWTError
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from datetime import datetime
+from app.models.common.verification_code import VerificationCode
+from app.cores.token import verify_token, create_access_token
 
-async def get_new_access_token_if_expired(db: AsyncSession, token: str) -> str | None:
+async def refresh_access_token(db: AsyncSession, refresh_token: str):
     try:
-        verify_token(token)  
-        return None
-
-    except ExpiredSignatureError:
-        from jose import jwt
-        payload = jwt.get_unverified_claims(token)
-        email = payload.get("email")
-
-        if not email:
-            return None
-
-        result = await db.execute(
-            select(VerificationCode).where(
-                VerificationCode.email == email,
-                VerificationCode.purpose == "refresh_token",
-                VerificationCode.used == False,
-                VerificationCode.expires_at > datetime.utcnow()
-            ).order_by(VerificationCode.expires_at.desc())
-        )
-        record = result.scalar_one_or_none()
-        if not record:
-            return None
-
-        try:
-            refresh_payload = verify_token(record.code)
-        except JWTError:
-            return None
-
-        new_access_token = create_access_token(data={
-            "user_id": refresh_payload["user_id"],
-            "email": refresh_payload["email"],
-            "role": refresh_payload["role"],
-            "statuses": refresh_payload["statuses"]
-        })
-
-        return new_access_token
-
+        payload = verify_token(refresh_token)
     except JWTError:
-        return None
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    email = payload.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Token sin email")
+
+    result = await db.execute(
+        select(VerificationCode).where(
+            VerificationCode.email == email,
+            VerificationCode.purpose == "refresh_token",
+            VerificationCode.used == False,
+            VerificationCode.expires_at > datetime.utcnow()
+        ).order_by(VerificationCode.expires_at.desc())
+    )
+
+    record = result.scalar_one_or_none()
+
+    if not record or record.code != refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token no válido o no encontrado")
+
+    access_token = create_access_token(data={
+        "user_id": payload["user_id"],
+        "email": payload["email"],
+        "role": payload["role"],
+        "statuses": payload["statuses"]
+    })
+
+    return access_token, payload
