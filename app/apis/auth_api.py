@@ -1,5 +1,7 @@
 
 from fastapi import APIRouter, Depends
+from app.schemas.auths.logout_sheme import DefaultResponse, LogoutRequest
+from app.services.auths.logout_service import logout_user
 from app.services.auths.register_service import register_user
 from app.schemas.auths.register_shema import RegisterUserRequest, RegisterUserResponse
 from app.apis.deps import get_db
@@ -76,6 +78,17 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
         }
     }
 
+'''
+Endpoint que cierra sesión invocando logout_user().
+Elimina el refresh_token del usuario y confirma el logout.
+'''
+@router.post("/logout/", response_model=DefaultResponse)
+async def logout(request: LogoutRequest, db: AsyncSession = Depends(get_db)):
+    await logout_user(db, request.email)
+    return {
+        "success": True,
+        "message": "Sesión cerrada correctamente",
+    }
 
 
 @router.post("/send")
