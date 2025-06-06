@@ -4,6 +4,13 @@ from sqlalchemy import delete
 from datetime import datetime
 from app.models.common.verification_code import VerificationCode
 
+
+'''
+Propósito: Invalidar refresh token en logout.
+Acción: Borra el token activo del usuario (no usado/no expirado).
+Retorno: True (éxito) o False (no había token).
+'''
+
 async def logout_user(db: AsyncSession, email: str):
     try:
         result = await db.execute(

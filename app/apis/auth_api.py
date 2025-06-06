@@ -79,7 +79,8 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     }
 
 '''
-Checar que eliemme en la base de datos el refresh token y marca erro cuando le mando 2 vese al cerre sesión
+Endpoint que cierra sesión invocando logout_user().
+Elimina el refresh_token del usuario y confirma el logout.
 '''
 @router.post("/logout/", response_model=DefaultResponse)
 async def logout(request: LogoutRequest, db: AsyncSession = Depends(get_db)):
