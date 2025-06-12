@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, UTC
+from fastapi import HTTPException
 from jose import JWTError, jwt
 import os
 import secrets
@@ -17,7 +18,7 @@ Genera un token JWT codificado con la información proporcionada en `data`.
     - Si no se pasa, se usa el tiempo por defecto (24 horas).
     - El token incluye la clave de expiración "exp" para validar su vigencia.
 """
-def create_access_token(data: dict, expires_delta: timedelta = None):
+def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
