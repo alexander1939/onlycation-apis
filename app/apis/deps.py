@@ -11,3 +11,6 @@ por abrir o cerrar la conexión manualmente.
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
+
+async def public_access():
+    pass

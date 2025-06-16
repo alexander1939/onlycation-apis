@@ -37,6 +37,8 @@ from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_role import create_role
 from app.scripts.databases.create_educational_level import create_educational_level
 from app.scripts.databases.create_modality import create_modality
+from app.scripts.databases.create_privilege import create_privileges
+from app.scripts.databases.create_privilege_role import create_privileges_role
 
 from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.auths.register_service import RegisterUserRequest
@@ -44,6 +46,7 @@ from app.apis.auth_api import register_student_route
 from app.apis.auth_api import register_teacher_route
 
 from app.apis.auth_api import router as auth_router
+from app.apis.privileges_api import router as privileges_router
 
 
 
@@ -63,6 +66,8 @@ async def lifespan(app: FastAPI):
     await create_modality()
     await create_role()
     await create_educational_level()
+    await create_privileges()
+    await create_privileges_role()
 
     yield
 
@@ -79,6 +84,7 @@ def create_app() -> FastAPI:
     )
     # Agrega el router de autenticación con un prefijo y una etiqueta
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
+    app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     ##app.include_router()
 
     return app
