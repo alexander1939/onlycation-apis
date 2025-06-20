@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from app.schemas.auths.logout_sheme import DefaultResponse, LogoutRequest
 from app.schemas.auths.refresh_token import RefreshTokenRequest
 from app.services.auths.logout_service import logout_user
@@ -13,12 +13,9 @@ from app.schemas.auths.login_schema import LoginRequest, LoginResponse
 from app.services.auths.login_service import login_user
 
 
-from fastapi import APIRouter, HTTPException, Depends
 from app.schemas.externals.email_schema import EmailSchema
 from app.services.externals.email_service import send_email
 
-from app.schemas.auths.password_reset_schema import PasswordResetRequest, PasswordResetConfirm
-from app.services.auths.password_reset_service import request_password_reset, reset_password
 
 router = APIRouter()
 
@@ -96,7 +93,6 @@ async def logout(request: LogoutRequest, db: AsyncSession = Depends(get_db)):
     }
 
 
-<<<<<<< HEAD
 @router.post("/send")
 async def send_email_api(email: EmailSchema):
     try:
@@ -107,38 +103,6 @@ async def send_email_api(email: EmailSchema):
 
 
 
-@router.post("/password-reset/request")
-async def request_reset_password(
-    request: PasswordResetRequest, 
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Solicita un correo para recuperar la contraseña.
-    Siempre devuelve éxito para no revelar qué emails existen en el sistema.
-    """
-    await request_password_reset(request.email, db)
-    return {
-        "success": True,
-        "message": "Si el email existe en nuestro sistema, recibirás un correo con instrucciones."
-    }
-
-@router.post("/password-reset/confirm")
-async def confirm_reset_password(
-    request: PasswordResetConfirm, 
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Confirma el cambio de contraseña usando el token recibido por email.
-    """
-    user = await reset_password(request.token, request.new_password, db)
-    return {
-        "success": True,
-        "message": "Contraseña actualizada correctamente",
-        "data": {
-            "email": user.email
-        }
-    }
-=======
 @router.post("/refresh-token/")
 async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
     access_token, payload = await refresh_access_token(db, request.token)
@@ -158,4 +122,20 @@ async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends
 #         return {"success": True, "message": "Correo enviado correctamente"}
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=f"Error al enviar el correo: {str(e)}")
->>>>>>> 473353d7b434be5dc71c684590afa4104cd81d1e
+
+from app.schemas.auths.password_reset_schema import PasswordResetRequest, PasswordResetVerify
+from app.services.auths.password_reset_service import send_password_reset_email, verify_password_reset
+
+@router.post("/password-reset/request")
+async def request_password_reset(
+    request: PasswordResetRequest, 
+    db: AsyncSession = Depends(get_db)
+):
+    return await send_password_reset_email(request, db)
+
+@router.post("/password-reset/verify")
+async def verify_password_reset_code(
+    request: PasswordResetVerify, 
+    db: AsyncSession = Depends(get_db)
+):
+    return await verify_password_reset(request, db)

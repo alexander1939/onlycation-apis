@@ -7,7 +7,7 @@ class VerificationCode(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), index=True, nullable=False)
-    role = Column(String(50), nullable=False)
+    role = Column(String(50), nullable=True)
     purpose = Column(String(50), nullable=False)
     code = Column(String(6), nullable=False, index=True)
     used = Column(Boolean, default=False, nullable=False)

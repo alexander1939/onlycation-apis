@@ -1,60 +1,88 @@
-from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.users.user import User
-from app.schemas.auths.password_reset_schema import PasswordResetRequest, PasswordResetConfirm
-from app.services.externals.email_service import send_email
-from app.cores.token import create_reset_token, verify_reset_token
-from app.schemas.externals.email_schema import EmailSchema
 from datetime import datetime, UTC
-import html
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.models.users.user import User
+from app.models.common.verification_code import VerificationCode
+from app.cores.token import generate_verification_code, get_verification_expiration
+from app.services.externals.email_service import send_email
+from app.schemas.externals.email_schema import EmailSchema
+from app.schemas.auths.password_reset_schema import PasswordResetRequest, PasswordResetVerify
+from fastapi import HTTPException
+from passlib.context import CryptContext
 
-async def request_password_reset(email: str, db: AsyncSession):
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+async def send_password_reset_email(request: PasswordResetRequest, db: AsyncSession):
     # Verificar si el usuario existe
-    user = await db.get(User, email)
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalars().first()
+    
     if not user:
-        # Por seguridad, no revelamos si el email existe o no
-        return
+        raise HTTPException(status_code=404, detail="Email no registrado")
     
-    # Crear token de recuperación
-    reset_token = create_reset_token(email)
+    # Generar código de verificación
+    code = generate_verification_code()
+    expires_at = get_verification_expiration()
     
-    # Crear enlace de recuperación (en producción usarías tu URL frontend)
-    reset_link = f"http://tuapp.com/reset-password?token={reset_token}"
+    # Guardar código en la base de datos
+    verification_code = VerificationCode(
+        email=request.email,
+        code=code,
+        purpose="password_reset",
+        expires_at=expires_at,
+        used=False
+    )
     
-    # Crear y enviar el email
+    db.add(verification_code)
+    await db.commit()
+    
+    # Enviar correo electrónico
     subject = "Recuperación de contraseña"
     body = f"""
-    <h2>Recuperación de contraseña</h2>
-    <p>Hemos recibido una solicitud para restablecer tu contraseña. Si no fuiste tú, ignora este correo.</p>
-    <p>Para restablecer tu contraseña, haz clic en el siguiente enlace:</p>
-    <a href="{reset_link}">Restablecer contraseña</a>
-    <p>Este enlace expirará en 30 minutos.</p>
+    <h1>Recuperación de contraseña</h1>
+    <p>Hemos recibido una solicitud para restablecer tu contraseña.</p>
+    <p>Tu código de verificación es: <strong>{code}</strong></p>
+    <p>Este código expirará en 15 minutos.</p>
     """
     
     email_data = EmailSchema(
-        email=email,
+        email=request.email,
         subject=subject,
         body=body
     )
     
     await send_email(email_data)
-
-async def reset_password(token: str, new_password: str, db: AsyncSession):
-    # Verificar el token
-    email = verify_reset_token(token)
-    if not email:
-        raise HTTPException(status_code=400, detail="Token inválido o expirado")
     
-    # Buscar al usuario
-    user = await db.get(User, email)
+    return {"success": True, "message": "Correo de recuperación enviado"}
+
+async def verify_password_reset(request: PasswordResetVerify, db: AsyncSession):
+    # Verificar si el código es válido
+    result = await db.execute(
+        select(VerificationCode).where(
+            VerificationCode.email == request.email,
+            VerificationCode.code == request.code,
+            VerificationCode.purpose == "password_reset",
+            VerificationCode.used == False,
+            VerificationCode.expires_at > datetime.now(UTC)
+        )
+    )
+    verification_code = result.scalars().first()
+    
+    if not verification_code:
+        raise HTTPException(status_code=400, detail="Código inválido o expirado")
+    
+    # Verificar si el usuario existe
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalars().first()
+    
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    # Actualizar la contraseña
-    user.password = new_password  # Deberías hashear la contraseña aquí
-    user.updated_at = datetime.now(UTC)
+    # Actualizar contraseña
+    hashed_password = pwd_context.hash(request.new_password)
+    user.password = hashed_password
+    verification_code.used = True
     
     await db.commit()
-    await db.refresh(user)
     
-    return user
+    return {"success": True, "message": "Contraseña actualizada correctamente"}
