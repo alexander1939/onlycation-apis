@@ -34,6 +34,7 @@ from app.models.subscriptions.subscription import Subscription
 from app.models.subscriptions.payment_subscription import PaymentSubscription
 
 from app.scripts.databases.create_status import create_status
+from app.scripts.databases.create_user_admin import create_admin_user
 from app.scripts.databases.create_role import create_role
 from app.scripts.databases.create_educational_level import create_educational_level
 from app.scripts.databases.create_modality import create_modality
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):
     await create_educational_level()
     await create_privileges()
     await create_privileges_role()
+    await create_admin_user()
 
     yield
 
