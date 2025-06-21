@@ -6,7 +6,7 @@ from app.services.auths.logout_service import logout_user
 from app.services.auths.refresh_token_service import refresh_access_token
 from app.services.auths.register_service import register_user
 from app.schemas.auths.register_shema import RegisterUserRequest, RegisterUserResponse
-from app.apis.deps import get_db, public_access
+from app.apis.deps import auth_required, get_db, public_access
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from app.schemas.auths.login_schema import LoginRequest, LoginResponse
@@ -84,7 +84,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
 Endpoint que cierra sesión invocando logout_user().
 Elimina el refresh_token del usuario y confirma el logout.
 '''
-@router.post("/logout/", response_model=DefaultResponse)
+@router.post("/logout/", response_model=DefaultResponse, dependencies=[Depends(auth_required)])
 async def logout(request: LogoutRequest, db: AsyncSession = Depends(get_db)):
     await logout_user(db, request.email)
     return {
