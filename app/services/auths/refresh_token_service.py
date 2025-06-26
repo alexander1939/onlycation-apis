@@ -27,7 +27,7 @@ async def refresh_access_token(db: AsyncSession, refresh_token: str):
 
     record = result.scalar_one_or_none()
 
-    if not record or record.code != refresh_token:
+    if not record or record.code != refresh_token: # type: ignore
         raise HTTPException(status_code=401, detail="Update token invalid or not found")
 
     access_token = create_access_token(data={

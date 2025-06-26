@@ -9,8 +9,9 @@ from datetime import datetime
 from app.services.validation.exception import unexpected_exception
 
 
-async def create_privilege_service(db: AsyncSession, data: PrivilegeCreateRequest) -> Privilege:
+async def create_privilege_service(db: AsyncSession, data: PrivilegeCreateRequest) -> Privilege: # type: ignore
     try:
+        # Verificar que no exista un privilegio con el mismo nombre y acción
         result = await db.execute(
             select(Privilege).where(
                 Privilege.name == data.name,
@@ -19,15 +20,17 @@ async def create_privilege_service(db: AsyncSession, data: PrivilegeCreateReques
         )
         existing = result.scalar_one_or_none()
         if existing:
-            raise HTTPException(status_code=400, detail="El privilegio ya existe.")
+            raise HTTPException(status_code=400, detail="Privilege already exists.")
 
+        # Buscar el status activo
         result_status = await db.execute(
             select(Status).where(Status.name == "active")
         )
         status = result_status.scalar_one_or_none()
         if not status:
-            raise HTTPException(status_code=404, detail="Status 'active' no encontrado.")
+            raise HTTPException(status_code=404, detail="Status 'active' not found.")
 
+        # Crear el nuevo privilegio
         new_privilege = Privilege(
             name=data.name,
             action=data.action,
@@ -42,6 +45,5 @@ async def create_privilege_service(db: AsyncSession, data: PrivilegeCreateReques
 
     except HTTPException as e:
         raise e
-
     except Exception:
-        await unexpected_exception
+        await unexpected_exception()

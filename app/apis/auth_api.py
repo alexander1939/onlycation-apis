@@ -66,7 +66,7 @@ Ruta para iniciar sesión.
 """
 @router.post("/login/", response_model=LoginResponse, dependencies=[Depends(public_access)])
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
-    access_token, refresh_token, user = await login_user(db, request.email, request.password)
+    access_token, refresh_token, user = await login_user(db, request.email, request.password)# type: ignore
     return {
         "success": True,
         "message": "Login exitoso",

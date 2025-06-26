@@ -9,7 +9,7 @@ from fastapi import HTTPException
 
 
 
-async def register_user(request: RegisterUserRequest, role_name: str, status_name: str, db: AsyncSession) -> User:
+async def register_user(request: RegisterUserRequest, role_name: str, status_name: str, db: AsyncSession) -> User:# type: ignore
     try:
         async with db.begin():  
 
@@ -37,8 +37,8 @@ async def register_user(request: RegisterUserRequest, role_name: str, status_nam
                 last_name=request.last_name,
                 email=request.email,
                 password=get_password_hash(request.password),
-                role_id=role.id,
-                status_id=status.id
+                role_id=role.id,# type: ignore
+                status_id=status.id# type: ignore
             )
 
             db.add(new_user)

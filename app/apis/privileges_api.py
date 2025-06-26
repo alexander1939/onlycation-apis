@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends
 from app.apis.deps import get_db, require_privilege
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,14 +13,11 @@ from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
-# Define la dependencia de privilegio
-privilege_create_dependency = require_privilege("privilege", "create")
-
 @router.post("/create/", response_model=PrivilegeResponse)
 async def create_privilege(
     request: PrivilegeCreateRequest,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(privilege_create_dependency)  # Protección con privilegio
+    user_data = Depends(require_privilege("privilege", "create"))
 ):
     new_privilege = await create_privilege_service(db, request)
     return {
