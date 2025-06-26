@@ -31,7 +31,7 @@ async def create_privileges():
                 ),
                 Privilege(
                     name="privilege",
-                    action="edit",
+                    action="update",
                     description="Allows editing existing Privileges",
                     status_id=active_status.id
                 ),

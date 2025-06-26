@@ -7,6 +7,12 @@ class PrivilegeCreateRequest(BaseModel):
     description: str 
     status_id: int
 
+class PrivilegeUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    action: Optional[str] = None
+    description: Optional[str] = None
+    status_id: Optional[int] = None
+
 class PrivilegeData(BaseModel):
     id: int
     name: str
