@@ -61,26 +61,22 @@ async def update_privilege_service(db: AsyncSession, privilege_id: int, data: Pr
         if not privilege:
             raise HTTPException(status_code=404, detail="Privilege not found.")
 
-        # Verificar si se está cambiando nombre y acción, y si ya existe otro con esos valores
-        if data.name is not None and data.action is not None:
-            result = await db.execute(
-                select(Privilege).where(
-                    Privilege.name == data.name,
-                    Privilege.action == data.action,
-                    Privilege.id != privilege_id
-                )
+        # Verificar si ya existe otro privilegio con el mismo nombre y acción
+        result = await db.execute(
+            select(Privilege).where(
+                Privilege.name == data.name,
+                Privilege.action == data.action,
+                Privilege.id != privilege_id
             )
-            existing = result.scalar_one_or_none()
-            if existing:
-                raise HTTPException(status_code=400, detail="Privilege with this name and action already exists.")
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=400, detail="Privilege with this name and action already exists.")
 
-        # Actualizar los campos proporcionados (sin status)
-        if data.name is not None:
-            privilege.name = data.name # type: ignore
-        if data.action is not None:
-            privilege.action = data.action # type: ignore
-        if data.description is not None:
-            privilege.description = data.description # type: ignore
+        # Actualizar todos los campos
+        privilege.name = data.name # type: ignore
+        privilege.action = data.action # type: ignore
+        privilege.description = data.description # type: ignore
 
         await db.commit()
         await db.refresh(privilege)

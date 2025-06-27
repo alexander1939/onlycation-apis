@@ -8,9 +8,9 @@ class PrivilegeCreateRequest(BaseModel):
     status_id: int
 
 class PrivilegeUpdateRequest(BaseModel):
-    name: Optional[str] = None
-    action: Optional[str] = None
-    description: Optional[str] = None
+    name: str
+    action: str
+    description: str
 
 class PrivilegeStatusRequest(BaseModel):
     status_id: int
