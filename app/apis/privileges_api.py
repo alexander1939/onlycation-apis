@@ -3,7 +3,7 @@ from app.apis.deps import get_db, require_privilege
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from app.schemas.auths.login_schema import LoginRequest, LoginResponse
-from app.schemas.privileges.privilege_shema import PrivilegeCreateRequest, PrivilegeUpdateRequest, PrivilegeStatusRequest, PrivilegeResponse, PrivilegeListResponse
+from app.schemas.privileges.privilege_shema import PrivilegeCreateRequest, PrivilegeUpdateRequest, PrivilegeStatusRequest, PrivilegeResponse, PrivilegeStatusResponse, PrivilegeListResponse
 from app.services.auths.login_service import login_user
 from app.services.privileges.privilege_service import create_privilege_service, update_privilege_service, get_privilege_service, get_all_privileges_service, change_privilege_status_service
 
@@ -95,7 +95,7 @@ async def get_all_privileges(
         "has_more": result["has_more"]
     }
 
-@router.post("/change-status/{privilege_id}", response_model=PrivilegeResponse)
+@router.post("/change-status/{privilege_id}", response_model=PrivilegeStatusResponse)
 async def change_privilege_status(
     privilege_id: int,
     request: PrivilegeStatusRequest,
@@ -110,6 +110,7 @@ async def change_privilege_status(
             "id": updated_privilege.id,
             "name": updated_privilege.name,
             "action": updated_privilege.action,
-            "description": updated_privilege.description
+            "description": updated_privilege.description,
+            "status_id": updated_privilege.status_id
         }
     }

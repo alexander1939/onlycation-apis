@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 
 class PrivilegeCreateRequest(BaseModel):
@@ -13,7 +13,7 @@ class PrivilegeUpdateRequest(BaseModel):
     description: str
 
 class PrivilegeStatusRequest(BaseModel):
-    status_id: int
+    status_id: int = Field(..., description="Only status_id is allowed")
 
 class PrivilegeData(BaseModel):
     id: int
@@ -21,10 +21,22 @@ class PrivilegeData(BaseModel):
     action: str
     description: str 
 
+class PrivilegeDataWithStatus(BaseModel):
+    id: int
+    name: str
+    action: str
+    description: str
+    status_id: int
+
 class PrivilegeResponse(BaseModel):
     success: bool
     message: str
     data: PrivilegeData
+
+class PrivilegeStatusResponse(BaseModel):
+    success: bool
+    message: str
+    data: PrivilegeDataWithStatus
 
 class PrivilegeListResponse(BaseModel):
     success: bool
