@@ -7,10 +7,12 @@ class VerificationCode(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), index=True, nullable=False)
-    role = Column(String(50), nullable=True)
+    role = Column(String(50), nullable=False)
     purpose = Column(String(50), nullable=False)
     code = Column(String(6), nullable=False, index=True)
     used = Column(Boolean, default=False, nullable=False)
+    attempts = Column(Integer, default=0)  # Nuevo campo para contar intentos
+    last_attempt = Column(DateTime)  # Nuevo campo para registrar último intento
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
 

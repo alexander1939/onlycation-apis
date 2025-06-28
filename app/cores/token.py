@@ -9,7 +9,7 @@ from typing import Optional
 SECRET_KEY = os.getenv("SECRET_KEY", "UUr09BTA_9ZGHjl6Mz75FuUn-ftJli7yN2XMyt1myeA")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
-RESET_TOKEN_EXPIRE_MINUTES = 30  # 30 minutos para el token de recuperación
+RESET_TOKEN_EXPIRE_MINUTES = 3  # 30 minutos para el token de recuperación
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 
@@ -45,7 +45,7 @@ import random
 import string
 
 VERIFICATION_CODE_LENGTH = 6
-VERIFICATION_CODE_EXPIRE_MINUTES = 15
+VERIFICATION_CODE_EXPIRE_MINUTES = 3
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
