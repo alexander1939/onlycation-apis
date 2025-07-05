@@ -19,8 +19,8 @@ async def authenticate_user(db: AsyncSession, email: str, password: str):
     )
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(password, user.password):
-        raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
+    if not user or not verify_password(password, user.password):# type: ignore
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
 
     return user
 
@@ -68,15 +68,13 @@ async def login_user(db: AsyncSession, email: str, password: str):
 
         return access_token, refresh_token, user
 
-    except Exception as e:
+    except HTTPException as e:
+        raise e
+    except Exception:
+        await unexpected_exception()
+
+    '''except Exception as e:
         import traceback
         print("ERROR:", e)
         traceback.print_exc()
-        raise e
-
-    '''except HTTPException as e:
-        raise e
-    except Exception:
-        await unexpected_exception()'''
-
-    
+        raise e'''

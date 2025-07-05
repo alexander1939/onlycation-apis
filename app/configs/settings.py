@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
     SECRET_KEY: str
 
+    admin_email: str
+    admin_password: str
+    admin_first_name: str
+    admin_last_name: str
+    admin_role: str
+
+    
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
     MAIL_FROM: str

@@ -6,7 +6,7 @@ from app.services.auths.logout_service import logout_user
 from app.services.auths.refresh_token_service import refresh_access_token
 from app.services.auths.register_service import register_user
 from app.schemas.auths.register_shema import RegisterUserRequest, RegisterUserResponse
-from app.apis.deps import get_db
+from app.apis.deps import auth_required, get_db, public_access
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from app.schemas.auths.login_schema import LoginRequest, LoginResponse
@@ -25,7 +25,7 @@ Ruta para registrar un nuevo estudiante.
     - Crea un usuario con rol "student" y estado "active".
     - Retorna datos básicos del usuario registrado.
 """
-@router.post("/register/student/", response_model=RegisterUserResponse)
+@router.post("/register/student/", response_model=RegisterUserResponse, dependencies=[Depends(public_access)])
 async def register_student_route(request: RegisterUserRequest, db: AsyncSession = Depends(get_db)):
     new_user = await register_user(request, "student", "active" ,db)
     return {
@@ -44,7 +44,7 @@ Ruta para registrar un nuevo profesor.
     - Crea un usuario con rol "teacher" y estado "pending".
     - Retorna los datos del profesor registrado.
 """
-@router.post("/register/teacher/")
+@router.post("/register/teacher/",dependencies=[Depends(public_access)], response_model=RegisterUserResponse)
 async def register_teacher_route(request: RegisterUserRequest, db: AsyncSession = Depends(get_db)):
     new_user = await register_user(request, "teacher", "pending", db)
     return {
@@ -64,9 +64,9 @@ Ruta para iniciar sesión.
     - Verifica las credenciales y genera un token de acceso.
     - Devuelve el token, tipo de token y algunos datos del usuario.
 """
-@router.post("/login/", response_model=LoginResponse)
+@router.post("/login/", response_model=LoginResponse, dependencies=[Depends(public_access)])
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
-    access_token, refresh_token, user = await login_user(db, request.email, request.password)
+    access_token, refresh_token, user = await login_user(db, request.email, request.password)# type: ignore
     return {
         "success": True,
         "message": "Login exitoso",
@@ -84,7 +84,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
 Endpoint que cierra sesión invocando logout_user().
 Elimina el refresh_token del usuario y confirma el logout.
 '''
-@router.post("/logout/", response_model=DefaultResponse)
+@router.post("/logout/", response_model=DefaultResponse, dependencies=[Depends(auth_required)])
 async def logout(request: LogoutRequest, db: AsyncSession = Depends(get_db)):
     await logout_user(db, request.email)
     return {
