@@ -9,6 +9,9 @@ async def send_email(email_data: EmailSchema):
         body=email_data.body,
         subtype="html"
     )
-
     fm = FastMail(conf)
-    await fm.send_message(message)
+    try:
+        await fm.send_message(message)
+        print(f"Correo enviado exitosamente a {email_data.email}")
+    except Exception as e:
+        print(f"Error enviando el correo: {str(e)}")
