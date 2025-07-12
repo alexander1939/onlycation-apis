@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, Query
 from app.schemas.suscripcion.plan_schema import CreatePlanRequest, CreatePlanResponse, UpdatePlanRequest, UpdatePlanResponse, GetPlansResponse, GetPlanResponse
+from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, CreateBenefitResponse
 from app.services.suscripcion.plan_service import create_plan, update_plan, get_all_plans, get_plan_by_id
+from app.services.suscripcion.benefit_service import create_benefit
 from app.apis.deps import auth_required, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
+# Endpoints para Planes
 @router.post("/plans/", response_model=CreatePlanResponse, dependencies=[Depends(auth_required)])
 async def create_plan_route(request: CreatePlanRequest, db: AsyncSession = Depends(get_db)):
     plan = await create_plan(db, request)
@@ -17,7 +20,7 @@ async def create_plan_route(request: CreatePlanRequest, db: AsyncSession = Depen
             "name": plan.name, # type: ignore
             "description": plan.description,   # type: ignore
             "price": plan.price, # type: ignore
-            "duration": plan.duration, # type: ignore 
+            "duration": plan.duration, # type: ignore
             "role_id": plan.role_id, # type: ignore
             "status_id": plan.status_id # type: ignore
         }
@@ -76,5 +79,19 @@ async def get_plan_route(plan_id: int, db: AsyncSession = Depends(get_db)):
             "status_id": plan.status_id, # type: ignore
             "created_at": plan.created_at.isoformat(), # type: ignore
             "updated_at": plan.updated_at.isoformat() # type: ignore
+        }
+    }
+
+# Endpoints para Beneficios
+@router.post("/benefits/", response_model=CreateBenefitResponse, dependencies=[Depends(auth_required)])
+async def create_benefit_route(request: CreateBenefitRequest, db: AsyncSession = Depends(get_db)):
+    benefit = await create_benefit(db, request)
+    return {
+        "success": True,
+        "message": "Benefit created successfully",
+        "data": {
+            "name": benefit.name, # type: ignore
+            "description": benefit.description, # type: ignore
+            "status_id": benefit.status_id # type: ignore
         }
     } 
