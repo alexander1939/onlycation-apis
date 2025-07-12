@@ -17,7 +17,7 @@ async def create_plan_route(request: CreatePlanRequest, db: AsyncSession = Depen
             "name": plan.name, # type: ignore
             "description": plan.description,   # type: ignore
             "price": plan.price, # type: ignore
-            "duration": plan.duration, # type: ignore
+            "duration": plan.duration, # type: ignore 
             "role_id": plan.role_id, # type: ignore
             "status_id": plan.status_id # type: ignore
         }
