@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from app.schemas.suscripcion.plan_schema import CreatePlanRequest, CreatePlanResponse, UpdatePlanRequest, UpdatePlanResponse, GetPlansResponse, GetPlanResponse
-from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, CreateBenefitResponse
+from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, CreateBenefitResponse, UpdateBenefitRequest, UpdateBenefitResponse
 from app.services.suscripcion.plan_service import create_plan, update_plan, get_all_plans, get_plan_by_id
-from app.services.suscripcion.benefit_service import create_benefit
+from app.services.suscripcion.benefit_service import create_benefit, update_benefit
 from app.apis.deps import auth_required, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,6 +89,19 @@ async def create_benefit_route(request: CreateBenefitRequest, db: AsyncSession =
     return {
         "success": True,
         "message": "Benefit created successfully",
+        "data": {
+            "name": benefit.name, # type: ignore
+            "description": benefit.description, # type: ignore
+            "status_id": benefit.status_id # type: ignore
+        }
+    }
+
+@router.put("/benefits/{benefit_id}", response_model=UpdateBenefitResponse, dependencies=[Depends(auth_required)])
+async def update_benefit_route(benefit_id: int, request: UpdateBenefitRequest, db: AsyncSession = Depends(get_db)):
+    benefit = await update_benefit(db, benefit_id, request)
+    return {
+        "success": True,
+        "message": "Benefit updated successfully",
         "data": {
             "name": benefit.name, # type: ignore
             "description": benefit.description, # type: ignore

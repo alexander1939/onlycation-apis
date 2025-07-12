@@ -10,6 +10,12 @@ class CreateBenefitRequest(BaseModel):
     name: str
     description: Optional[str] = None
 
+# Schema para actualizar un beneficio (todos los campos obligatorios)
+class UpdateBenefitRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    status_id: int
+
 # Schema para los datos de un beneficio
 class BenefitData(BaseModel):
     name: str
@@ -18,6 +24,12 @@ class BenefitData(BaseModel):
 
 # Schema para respuesta de creación
 class CreateBenefitResponse(BaseModel):
+    success: bool
+    message: str
+    data: BenefitData
+
+# Schema para respuesta de actualización
+class UpdateBenefitResponse(BaseModel):
     success: bool
     message: str
     data: BenefitData 
