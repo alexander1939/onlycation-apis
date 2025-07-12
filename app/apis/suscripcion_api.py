@@ -29,7 +29,7 @@ async def update_plan_route(plan_id: int, request: UpdatePlanRequest, db: AsyncS
     return {
         "success": True,
         "message": "Plan updated successfully",
-        "data": {
+        "data": { 
             "guy": plan.guy, # type: ignore
             "name": plan.name, # type: ignore
             "description": plan.description, # type: ignore
