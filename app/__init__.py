@@ -48,7 +48,7 @@ from app.apis.auth_api import register_teacher_route
 
 from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
-
+from app.apis.profile_api import router as profile_router
 
 
 @asynccontextmanager
@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
     # Agrega el router de autenticación con un prefijo y una etiqueta
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
+    app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
     ##app.include_router()
 
     return app
