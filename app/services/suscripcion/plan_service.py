@@ -118,4 +118,41 @@ async def update_plan(db: AsyncSession, plan_id: int, plan_data: UpdatePlanReque
         raise e
     except Exception as e:
         # Para errores internos del servidor, usar unexpected_exception
+        await unexpected_exception()
+
+async def get_all_plans(db: AsyncSession, skip: int = 0, limit: int = 100):
+    try:
+        result = await db.execute(
+            select(Plan)
+            .options(joinedload(Plan.role))
+            .offset(skip)
+            .limit(limit)
+        )
+        plans = result.scalars().all()
+        
+        return plans
+
+    except Exception as e:
+        # Para errores internos del servidor, usar unexpected_exception
+        await unexpected_exception()
+
+async def get_plan_by_id(db: AsyncSession, plan_id: int):
+    try:
+        result = await db.execute(
+            select(Plan)
+            .where(Plan.id == plan_id)
+            .options(joinedload(Plan.role), joinedload(Plan.status))
+        )
+        plan = result.scalar_one_or_none()
+        
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan not found")
+        
+        return plan
+
+    except HTTPException as e:
+        # Re-lanzar HTTPException para que llegue al usuario
+        raise e
+    except Exception as e:
+        # Para errores internos del servidor, usar unexpected_exception
         await unexpected_exception() 

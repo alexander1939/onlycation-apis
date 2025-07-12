@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends
-from app.schemas.suscripcion.plan_schema import CreatePlanRequest, CreatePlanResponse, UpdatePlanRequest, UpdatePlanResponse
-from app.services.suscripcion.plan_service import create_plan, update_plan
+from fastapi import APIRouter, Depends, Query
+from app.schemas.suscripcion.plan_schema import CreatePlanRequest, CreatePlanResponse, UpdatePlanRequest, UpdatePlanResponse, GetPlansResponse, GetPlanResponse
+from app.services.suscripcion.plan_service import create_plan, update_plan, get_all_plans, get_plan_by_id
 from app.apis.deps import auth_required, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +29,7 @@ async def update_plan_route(plan_id: int, request: UpdatePlanRequest, db: AsyncS
     return {
         "success": True,
         "message": "Plan updated successfully",
-        "data": { 
+        "data": {
             "guy": plan.guy, # type: ignore
             "name": plan.name, # type: ignore
             "description": plan.description, # type: ignore
@@ -37,5 +37,44 @@ async def update_plan_route(plan_id: int, request: UpdatePlanRequest, db: AsyncS
             "duration": plan.duration, # type: ignore
             "role_id": plan.role_id, # type: ignore
             "status_id": plan.status_id # type: ignore
+        }
+    }
+
+@router.get("/plans/", response_model=GetPlansResponse, dependencies=[Depends(auth_required)])
+async def get_plans_route(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    db: AsyncSession = Depends(get_db)
+):
+    plans = await get_all_plans(db, skip, limit)
+    return {
+        "success": True,
+        "message": "Plans retrieved successfully",
+        "data": [
+            {
+                "name": plan.name, # type: ignore
+                "price": plan.price, # type: ignore
+                "duration": plan.duration, # type: ignore
+                "role_id": plan.role_id # type: ignore
+            } for plan in plans # type: ignore
+        ]
+    }
+
+@router.get("/plans/{plan_id}", response_model=GetPlanResponse, dependencies=[Depends(auth_required)])
+async def get_plan_route(plan_id: int, db: AsyncSession = Depends(get_db)):
+    plan = await get_plan_by_id(db, plan_id)
+    return {
+        "success": True,
+        "message": "Plan retrieved successfully",
+        "data": {
+            "guy": plan.guy, # type: ignore
+            "name": plan.name, # type: ignore
+            "description": plan.description, # type: ignore
+            "price": plan.price, # type: ignore
+            "duration": plan.duration, # type: ignore
+            "role_id": plan.role_id, # type: ignore
+            "status_id": plan.status_id, # type: ignore
+            "created_at": plan.created_at.isoformat(), # type: ignore
+            "updated_at": plan.updated_at.isoformat() # type: ignore
         }
     } 
