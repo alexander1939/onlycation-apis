@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from app.schemas.suscripcion.plan_schema import CreatePlanRequest, CreatePlanResponse, UpdatePlanRequest, UpdatePlanResponse, GetPlansResponse, GetPlanResponse
-from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, CreateBenefitResponse, UpdateBenefitRequest, UpdateBenefitResponse
+from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, CreateBenefitResponse, UpdateBenefitRequest, UpdateBenefitResponse, GetBenefitsResponse, GetBenefitResponse
 from app.services.suscripcion.plan_service import create_plan, update_plan, get_all_plans, get_plan_by_id
-from app.services.suscripcion.benefit_service import create_benefit, update_benefit
+from app.services.suscripcion.benefit_service import create_benefit, update_benefit, get_all_benefits, get_benefit_by_id
 from app.apis.deps import auth_required, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -106,5 +106,39 @@ async def update_benefit_route(benefit_id: int, request: UpdateBenefitRequest, d
             "name": benefit.name, # type: ignore
             "description": benefit.description, # type: ignore
             "status_id": benefit.status_id # type: ignore
+        }
+    }
+
+@router.get("/benefits/", response_model=GetBenefitsResponse, dependencies=[Depends(auth_required)])
+async def get_benefits_route(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    db: AsyncSession = Depends(get_db)
+):
+    benefits = await get_all_benefits(db, skip, limit)
+    return {
+        "success": True,
+        "message": "Benefits retrieved successfully",
+        "data": [
+            {
+                "name": benefit.name, # type: ignore
+                "description": benefit.description, # type: ignore
+                "status_id": benefit.status_id # type: ignore
+            } for benefit in benefits # type: ignore
+        ]
+    }
+
+@router.get("/benefits/{benefit_id}", response_model=GetBenefitResponse, dependencies=[Depends(auth_required)])
+async def get_benefit_route(benefit_id: int, db: AsyncSession = Depends(get_db)):
+    benefit = await get_benefit_by_id(db, benefit_id)
+    return {
+        "success": True,
+        "message": "Benefit retrieved successfully",
+        "data": {
+            "name": benefit.name, # type: ignore
+            "description": benefit.description, # type: ignore
+            "status_id": benefit.status_id, # type: ignore
+            "created_at": benefit.created_at.isoformat(), # type: ignore
+            "updated_at": benefit.updated_at.isoformat() # type: ignore
         }
     } 

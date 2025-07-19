@@ -92,4 +92,41 @@ async def update_benefit(db: AsyncSession, benefit_id: int, benefit_data: Update
         raise e
     except Exception as e:
         # Para errores internos del servidor, usar unexpected_exception
+        await unexpected_exception()
+
+async def get_all_benefits(db: AsyncSession, skip: int = 0, limit: int = 100):
+    try:
+        result = await db.execute(
+            select(Benefit)
+            .options(joinedload(Benefit.status))
+            .offset(skip)
+            .limit(limit)
+        )
+        benefits = result.scalars().all()
+        
+        return benefits
+
+    except Exception as e:
+        # Para errores internos del servidor, usar unexpected_exception
+        await unexpected_exception()
+
+async def get_benefit_by_id(db: AsyncSession, benefit_id: int):
+    try:
+        result = await db.execute(
+            select(Benefit)
+            .where(Benefit.id == benefit_id)
+            .options(joinedload(Benefit.status))
+        )
+        benefit = result.scalar_one_or_none()
+        
+        if not benefit:
+            raise HTTPException(status_code=404, detail="Benefit not found")
+        
+        return benefit
+
+    except HTTPException as e:
+        # Re-lanzar HTTPException para que llegue al usuario
+        raise e
+    except Exception as e:
+        # Para errores internos del servidor, usar unexpected_exception
         await unexpected_exception() 
