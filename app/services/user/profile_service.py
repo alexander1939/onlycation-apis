@@ -1,157 +1,131 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
-from sqlalchemy.exc import IntegrityError
-from typing import List, Optional
+from sqlalchemy import select
+from typing import Optional
 from datetime import datetime
-
 from app.models.users.profile import Profile
-from app.schemas.user.profile_schema import ProfileCreateRequest, ProfileUpdateRequest
+from app.models.users.user import User
+from app.cores.token import verify_token
+from app.schemas.user.profile_schema import ProfileUpdateRequest
 
-class ProfileService:
-    def __init__(self, db: AsyncSession):
-        self.db = db
+# ==================== VALIDACIONES ====================
+
+async def _validate_user_exists(db: AsyncSession, user_id: int):
+    """Valida que el usuario exista en la base de datos"""
+    result = await db.execute(select(User).where(User.id == user_id))
+    if not result.scalar_one_or_none():
+        raise ValueError(f"El usuario con ID {user_id} no existe")
+
+async def _validate_unique_profile(db: AsyncSession, user_id: int):
+    """Valida que el usuario no tenga ya un perfil"""
+    result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+    if result.scalar_one_or_none():
+        raise ValueError("El usuario ya tiene un perfil asociado")
+
+def _validate_credential(credential: Optional[str]):
+    """Valida la credencial profesional"""
+    if credential and len(credential.strip()) < 3:
+        raise ValueError("La credencial debe tener al menos 3 caracteres")
+
+def _validate_gender(gender: Optional[str]):
+    """Valida el género del perfil"""
+    valid_genders = ["Masculino", "Femenino", "No binario", "Otro"]
+    if gender and gender not in valid_genders:
+        raise ValueError(f"Género inválido. Opciones: {', '.join(valid_genders)}")
+
+def _validate_sex(sex: Optional[str]):
+    """Valida el sexo del perfil"""
+    valid_sexes = ["Hombre", "Mujer", "Intersexual"]
+    if sex and sex not in valid_sexes:
+        raise ValueError(f"Sexo inválido. Opciones: {', '.join(valid_sexes)}")
+
+async def get_profile_by_user_id(db: AsyncSession, user_id: int) -> Optional[Profile]:
+    """Obtiene el perfil por ID de usuario (para usar con token)"""
+    result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+    return result.scalar_one_or_none()
+
+# ==================== FUNCIONES PRINCIPALES ====================
+
+async def create_profile(db: AsyncSession, profile_data) -> Profile:
+    """
+    Crea un nuevo perfil de usuario con validaciones
+    - Valida que el usuario exista y no tenga perfil
+    - Verifica credencial, género y sexo
+    - Crea el registro en la base de datos
+    """
+    # Validaciones
+    await _validate_user_exists(db, profile_data.user_id)
+    await _validate_unique_profile(db, profile_data.user_id)
+    _validate_credential(profile_data.credential)
+    _validate_gender(profile_data.gender)
+    _validate_sex(profile_data.sex)
+
+    # Creación del perfil
+    db_profile = Profile(
+        user_id=profile_data.user_id,
+        credential=profile_data.credential.strip() if profile_data.credential else None,
+        gender=profile_data.gender,
+        sex=profile_data.sex
+    )
     
-    async def create_profile(self, profile_data: ProfileCreateRequest) -> Profile:
-        """
-        Crear un nuevo perfil (async)
-        """
-        try:
-            # Verificar si el usuario ya tiene un perfil
-            existing_profile = await self.db.execute(
-                select(Profile).where(Profile.user_id == profile_data.user_id)
-            )
-            existing_profile = existing_profile.scalar_one_or_none()
-            
-            if existing_profile:
-                raise ValueError("El usuario ya tiene un perfil asociado")
-            
-            # Crear el nuevo perfil
-            db_profile = Profile(
-                user_id=profile_data.user_id,
-                credential=profile_data.credential,
-                gender=profile_data.gender,
-                sex=profile_data.sex
-            )
-            
-            self.db.add(db_profile)
-            await self.db.commit()
-            await self.db.refresh(db_profile)
-            
-            return db_profile
-        
-        except IntegrityError as e:
-            await self.db.rollback()
-            raise ValueError(f"Error de integridad: {str(e)}")
-        except Exception as e:
-            await self.db.rollback()
-            raise e
+    db.add(db_profile)
+    await db.commit()
+    await db.refresh(db_profile)
+    return db_profile
+
+
+
+async def get_profile_by_token(db: AsyncSession, token: str) -> Profile:
+    """
+    Obtiene el perfil usando el token JWT
+    - Valida el token
+    - Verifica la existencia del usuario
+    - Comprueba que exista el perfil
+    - Todas las validaciones están aquí
+    """
+    payload = verify_token(token)
+    user_id = payload.get("user_id")
     
-    async def get_profile_by_id(self, profile_id: int) -> Optional[Profile]:
-        """
-        Obtener un perfil por ID (async)
-        """
-        result = await self.db.execute(
-            select(Profile).where(Profile.id == profile_id)
-        )
-        return result.scalar_one_or_none()
+    if not user_id:
+        raise ValueError("Token inválido: falta user_id")
     
-    async def get_profile_by_user_id(self, user_id: int) -> Optional[Profile]:
-        """
-        Obtener un perfil por ID de usuario (async)
-        """
-        result = await self.db.execute(
-            select(Profile).where(Profile.user_id == user_id)
-        )
-        return result.scalar_one_or_none()
+    profile = await get_profile_by_user_id(db, user_id)
     
-    async def get_all_profiles(self, skip: int = 0, limit: int = 100) -> List[Profile]:
-        """
-        Obtener todos los perfiles con paginación (async)
-        """
-        result = await self.db.execute(
-            select(Profile).offset(skip).limit(limit)
-        )
-        return result.scalars().all()
+    if not profile:
+        raise ValueError("Perfil no encontrado")
     
-    async def update_profile(self, profile_id: int, profile_data: ProfileUpdateRequest) -> Optional[Profile]:
-        """
-        Actualizar un perfil existente (async)
-        """
-        try:
-            # Obtener el perfil
-            result = await self.db.execute(
-                select(Profile).where(Profile.id == profile_id)
-            )
-            db_profile = result.scalar_one_or_none()
-            
-            if not db_profile:
-                return None
-            
-            # Actualizar campos
-            update_data = profile_data.dict(exclude_unset=True)
-            for field, value in update_data.items():
-                if hasattr(db_profile, field):
-                    setattr(db_profile, field, value)
-            
-            db_profile.updated_at = datetime.utcnow()
-            
-            await self.db.commit()
-            await self.db.refresh(db_profile)
-            
-            return db_profile
-        
-        except IntegrityError as e:
-            await self.db.rollback()
-            raise ValueError(f"Error de integridad: {str(e)}")
-        except Exception as e:
-            await self.db.rollback()
-            raise e
+    return profile
+
+
+
+async def update_profile_by_token(
+    db: AsyncSession, 
+    token: str,
+    update_data: ProfileUpdateRequest
+) -> Profile:
+    """
+    Actualiza el perfil usando el token JWT
+    - Valida el token
+    - Obtiene el user_id
+    - Actualiza el perfil asociado
+    """
+    # Verificar token y obtener user_id
+    payload = verify_token(token)
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("Token inválido: falta user_id")
     
-    async def delete_profile(self, profile_id: int) -> bool:
-        """
-        Eliminar un perfil (async)
-        """
-        try:
-            result = await self.db.execute(
-                select(Profile).where(Profile.id == profile_id)
-            )
-            db_profile = result.scalar_one_or_none()
-            
-            if not db_profile:
-                return False
-            
-            await self.db.delete(db_profile)
-            await self.db.commit()
-            
-            return True
-        
-        except Exception as e:
-            await self.db.rollback()
-            raise e
+    # Obtener el perfil existente
+    profile = await get_profile_by_user_id(db, user_id)
+    if not profile:
+        raise ValueError("Perfil no encontrado")
     
-    async def get_profiles_by_gender(self, gender: str) -> List[Profile]:
-        """
-        Obtener perfiles por género (async)
-        """
-        result = await self.db.execute(
-            select(Profile).where(Profile.gender == gender)
-        )
-        return result.scalars().all()
+    # Aplicar actualizaciones
+    update_values = update_data.model_dump(exclude_unset=True)
+    for field, value in update_values.items():
+        setattr(profile, field, value)
     
-    async def get_profiles_by_sex(self, sex: str) -> List[Profile]:
-        """
-        Obtener perfiles por sexo (async)
-        """
-        result = await self.db.execute(
-            select(Profile).where(Profile.sex == sex)
-        )
-        return result.scalars().all()
+    profile.updated_at = datetime.utcnow()
     
-    async def search_profiles(self, search_term: str) -> List[Profile]:
-        """
-        Buscar perfiles por credencial (async)
-        """
-        result = await self.db.execute(
-            select(Profile).where(Profile.credential.contains(search_term))
-        )
-        return result.scalars().all()
+    await db.commit()
+    await db.refresh(profile)
+    return profile

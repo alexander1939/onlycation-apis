@@ -1,91 +1,98 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
-
 from app.apis.deps import auth_required
-from app.apis.deps import get_db, require_privilege
-from app.services.user.profile_service import ProfileService
-from app.schemas.user.profile_schema import ProfileCreateRequest, ProfileUpdateRequest, ProfileResponse, ProfileListResponse
+from app.apis.deps import auth_required, get_db
+from app.schemas.user.profile_schema import ProfileCreateRequest, ProfileUpdateRequest, ProfileData, ProfileResponse, ProfileCreateData, ProfileCreateResponse, ProfileUpdateData, ProfileUpdateResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+
+security = HTTPBearer()
 router = APIRouter()
 
-@router.post("/create/", response_model=ProfileResponse, dependencies=[Depends(auth_required)])
-async def create_profile(
+
+from app.services.user.profile_service import (
+    create_profile,
+     get_profile_by_token,
+    update_profile_by_token
+)
+
+
+"""
+    Crea un nuevo perfil
+    - Devuelve solo los campos relevantes para creación
+    - Estructura de respuesta optimizada para este caso
+    """
+@router.post("/create/", response_model=ProfileCreateResponse, dependencies=[Depends(auth_required)])
+async def create_profile_route(
     profile_data: ProfileCreateRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Crear un nuevo perfil
-    """
-    try:
-        profile_service = ProfileService(db)
-        profile = await profile_service.create_profile(profile_data)
-        return ProfileResponse(
-            success=True,
-            message="Perfil creado exitosamente",
-            data=profile
+    
+    profile = await create_profile(db, profile_data)
+    return ProfileCreateResponse(
+        success=True,
+        message="Perfil creado exitosamente",
+        data=ProfileCreateData(
+            credential=profile.credential,
+            gender=profile.gender,
+            sex=profile.sex,
+            created_at=profile.created_at
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error al crear el perfil: {str(e)}"
-        )
+    )
 
-@router.get("/search/{profile_id}", response_model=ProfileResponse, dependencies=[Depends(auth_required)])
-async def get_profile(
-    profile_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Consultar un perfil por ID
-    """
-    try:
-        profile_service = ProfileService(db)
-        profile = await profile_service.get_profile_by_id(profile_id)
-        if not profile:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil no encontrado"
-            )
-        return ProfileResponse(
-            success=True,
-            message="Perfil encontrado",
-            data=profile
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al consultar el perfil: {str(e)}"
-        )
 
-@router.put("/update/{profile_id}", response_model=ProfileResponse, dependencies=[Depends(auth_required)])
-async def update_profile(
-    profile_id: int,
+"""
+    Actualiza el perfil del usuario autenticado
+    - Usa el token JWT para identificar al usuario
+    - Actualiza solo los campos proporcionados
+    - Devuelve solo los campos relevantes para actualización
+    """
+@router.put("/update/me/", 
+           response_model=ProfileUpdateResponse,
+           dependencies=[Depends(auth_required)])
+async def update_my_profile(
     profile_data: ProfileUpdateRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Editar un perfil existente
-    """
-    try:
-        profile_service = ProfileService(db)
-        profile = await profile_service.update_profile(profile_id, profile_data)
-        if not profile:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil no encontrado"
-            )
-        return ProfileResponse(
-            success=True,
-            message="Perfil actualizado exitosamente",
-            data=profile
+    
+    token = credentials.credentials
+    profile = await update_profile_by_token(db, token, profile_data)
+    
+    return ProfileUpdateResponse(
+        success=True,
+        message="Perfil actualizado exitosamente",
+        data=ProfileUpdateData(
+            credential=profile.credential,
+            gender=profile.gender,
+            sex=profile.sex,
+            updated_at=profile.updated_at
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error al actualizar el perfil: {str(e)}"
+    )
+
+
+"""
+    Obtiene el perfil del usuario autenticado
+    - Usa el token JWT para identificar al usuario
+    - Devuelve los datos en formato ProfileResponse
+    """
+@router.get("/my_profile/", response_model=ProfileResponse, dependencies=[Depends(auth_required)])
+async def get_my_profile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    
+    token = credentials.credentials
+    profile = await get_profile_by_token(db, token)
+    
+    return ProfileResponse(
+        success=True,
+        message="Perfil obtenido exitosamente",
+        data=ProfileData(
+            credential=profile.credential,
+            gender=profile.gender,
+            sex=profile.sex,
+            created_at=profile.created_at,
+            updated_at=profile.updated_at
         )
+    )
