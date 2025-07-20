@@ -46,6 +46,81 @@ async def create_privileges():
                     action="read",
                     description="Allows reading existing Privileges",
                     status_id=active_status.id
+                ),
+                # Privilegios para Plan
+                Privilege(
+                    name="plan",
+                    action="create",
+                    description="Allows creating new Plans",
+                    status_id=active_status.id
+                ),
+                Privilege(
+                    name="plan",
+                    action="update",
+                    description="Allows editing existing Plans",
+                    status_id=active_status.id
+                ),
+                Privilege(
+                    name="plan",
+                    action="desactivate",
+                    description="Allows deactivating Plans",
+                    status_id=active_status.id
+                ),
+                Privilege(
+                    name="plan",
+                    action="read",
+                    description="Allows reading existing Plans",
+                    status_id=active_status.id
+                ),
+                # Privilegios para Benefit
+                Privilege(
+                    name="benefit",
+                    action="create",
+                    description="Allows creating new Benefits",
+                    status_id=active_status.id
+                ),
+                Privilege(
+                    name="benefit",
+                    action="update",
+                    description="Allows editing existing Benefits",
+                    status_id=active_status.id
+                ),
+                Privilege(
+                    name="benefit",
+                    action="desactivate",
+                    description="Allows deactivating Benefits",
+                    status_id=active_status.id
+                ),
+                Privilege(
+                    name="benefit",
+                    action="read",
+                    description="Allows reading existing Benefits",
+                    status_id=active_status.id
+                ),
+                # Privilegios para PlanBenefit
+                Privilege(
+                    name="plan_benefit",
+                    action="create",
+                    description="Allows creating new PlanBenefits",
+                    status_id=active_status.id
+                ),
+                Privilege(
+                    name="plan_benefit",
+                    action="update",
+                    description="Allows editing existing PlanBenefits",
+                    status_id=active_status.id
+                ),
+                Privilege(
+                    name="plan_benefit",
+                    action="desactivate",
+                    description="Allows deactivating PlanBenefits",
+                    status_id=active_status.id
+                ),
+                Privilege(
+                    name="plan_benefit",
+                    action="read",
+                    description="Allows reading existing PlanBenefits",
+                    status_id=active_status.id
                 )
             ]
 
