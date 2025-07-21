@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.apis.deps import auth_required
 from app.apis.deps import auth_required, get_db
@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 from app.services.user.profile_service import (
-    create_profile,
+    create_profile_by_token,
      get_profile_by_token,
     update_profile_by_token
 )
@@ -22,22 +22,18 @@ from app.services.user.profile_service import (
     - Devuelve solo los campos relevantes para creación
     - Estructura de respuesta optimizada para este caso
     """
-@router.post("/create/", response_model=ProfileCreateResponse, dependencies=[Depends(auth_required)])
+@router.post("/create/", response_model=ProfileCreateResponse)
 async def create_profile_route(
     profile_data: ProfileCreateRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
-    
-    profile = await create_profile(db, profile_data)
+    """Endpoint para creación de perfil"""
+    profile = await create_profile_by_token(db, credentials.credentials, profile_data)
     return ProfileCreateResponse(
         success=True,
         message="Perfil creado exitosamente",
-        data=ProfileCreateData(
-            credential=profile.credential,
-            gender=profile.gender,
-            sex=profile.sex,
-            created_at=profile.created_at
-        )
+        data=ProfileCreateData.from_orm(profile)
     )
 
 

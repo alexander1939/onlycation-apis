@@ -5,7 +5,7 @@ from datetime import datetime
 from app.models.users.profile import Profile
 from app.models.users.user import User
 from app.cores.token import verify_token
-from app.schemas.user.profile_schema import ProfileUpdateRequest
+from app.schemas.user.profile_schema import ProfileUpdateRequest, ProfileCreateRequest
 
 # ==================== VALIDACIONES ====================
 
@@ -39,93 +39,88 @@ def _validate_sex(sex: Optional[str]):
         raise ValueError(f"Sexo inválido. Opciones: {', '.join(valid_sexes)}")
 
 async def get_profile_by_user_id(db: AsyncSession, user_id: int) -> Optional[Profile]:
-    """Obtiene el perfil por ID de usuario (para usar con token)"""
+    """Obtiene el perfil por ID de usuario"""
     result = await db.execute(select(Profile).where(Profile.user_id == user_id))
     return result.scalar_one_or_none()
 
+async def _get_existing_profile_or_404(db: AsyncSession, user_id: int) -> Profile:
+    """Valida que el perfil exista, si no lanza error"""
+    profile = await get_profile_by_user_id(db, user_id)
+    if not profile:
+        raise ValueError("Perfil no encontrado")
+    return profile
+
 # ==================== FUNCIONES PRINCIPALES ====================
 
-async def create_profile(db: AsyncSession, profile_data) -> Profile:
+async def get_user_id_from_token(token: str) -> int:
+    """Extrae y valida el user_id del token"""
+    payload = verify_token(token)
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("Token inválido: falta user_id")
+    return user_id
+
+async def create_profile_by_token(
+    db: AsyncSession,
+    token: str,
+    profile_data: ProfileCreateRequest
+) -> Profile:
     """
-    Crea un nuevo perfil de usuario con validaciones
-    - Valida que el usuario exista y no tenga perfil
-    - Verifica credencial, género y sexo
-    - Crea el registro en la base de datos
+    Crea un perfil usando el token JWT
+
+    Raises:
+        ValueError: Si el token es inválido, el usuario no existe o ya tiene perfil.
     """
-    # Validaciones
-    await _validate_user_exists(db, profile_data.user_id)
-    await _validate_unique_profile(db, profile_data.user_id)
+    user_id = await get_user_id_from_token(token)
+    await _validate_user_exists(db, user_id)
+    await _validate_unique_profile(db, user_id)
+
     _validate_credential(profile_data.credential)
     _validate_gender(profile_data.gender)
     _validate_sex(profile_data.sex)
 
-    # Creación del perfil
     db_profile = Profile(
-        user_id=profile_data.user_id,
-        credential=profile_data.credential.strip() if profile_data.credential else None,
+        user_id=user_id,
+        credential=profile_data.credential,
         gender=profile_data.gender,
         sex=profile_data.sex
     )
-    
+
     db.add(db_profile)
     await db.commit()
     await db.refresh(db_profile)
     return db_profile
 
-
-
 async def get_profile_by_token(db: AsyncSession, token: str) -> Profile:
     """
     Obtiene el perfil usando el token JWT
-    - Valida el token
-    - Verifica la existencia del usuario
-    - Comprueba que exista el perfil
-    - Todas las validaciones están aquí
+
+    Raises:
+        ValueError: Si el token es inválido o no hay perfil asociado.
     """
-    payload = verify_token(token)
-    user_id = payload.get("user_id")
-    
-    if not user_id:
-        raise ValueError("Token inválido: falta user_id")
-    
-    profile = await get_profile_by_user_id(db, user_id)
-    
-    if not profile:
-        raise ValueError("Perfil no encontrado")
-    
-    return profile
-
-
+    user_id = await get_user_id_from_token(token)
+    return await _get_existing_profile_or_404(db, user_id)
 
 async def update_profile_by_token(
-    db: AsyncSession, 
+    db: AsyncSession,
     token: str,
     update_data: ProfileUpdateRequest
 ) -> Profile:
     """
     Actualiza el perfil usando el token JWT
-    - Valida el token
-    - Obtiene el user_id
-    - Actualiza el perfil asociado
+
+    Raises:
+        ValueError: Si el token es inválido o el perfil no existe.
     """
-    # Verificar token y obtener user_id
-    payload = verify_token(token)
-    user_id = payload.get("user_id")
-    if not user_id:
-        raise ValueError("Token inválido: falta user_id")
-    
-    # Obtener el perfil existente
-    profile = await get_profile_by_user_id(db, user_id)
-    if not profile:
-        raise ValueError("Perfil no encontrado")
-    
-    # Aplicar actualizaciones
+    user_id = await get_user_id_from_token(token)
+    profile = await _get_existing_profile_or_404(db, user_id)
+
     update_values = update_data.model_dump(exclude_unset=True)
     for field, value in update_values.items():
         setattr(profile, field, value)
-    
+
     profile.updated_at = datetime.utcnow()
-    
+
     await db.commit()
     await db.refresh(profile)
     return profile

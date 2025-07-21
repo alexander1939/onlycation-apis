@@ -7,7 +7,6 @@ Modelo que representa la estructura de datos recibida y enviada en las APIs de P
 """
 
 class ProfileCreateRequest(BaseModel):
-    user_id: int
     credential: Optional[str] = None
     gender: Optional[str] = None
     sex: Optional[str] = None
