@@ -15,11 +15,11 @@ async def _validate_user_exists(db: AsyncSession, user_id: int):
     if not result.scalar_one_or_none():
         raise ValueError(f"El usuario con ID {user_id} no existe")
 
-async def _validate_unique_profile(db: AsyncSession, user_id: int):
-    """Valida que el usuario no tenga ya un perfil"""
-    result = await db.execute(select(Profile).where(Profile.user_id == user_id))
-    if result.scalar_one_or_none():
-        raise ValueError("El usuario ya tiene un perfil asociado")
+# async def _validate_unique_profile(db: AsyncSession, user_id: int):
+#     """Valida que el usuario no tenga ya un perfil"""
+#     result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+#     if result.scalar_one_or_none():
+#         raise ValueError("El usuario ya tiene un perfil asociado")
 
 def _validate_credential(credential: Optional[str]):
     """Valida la credencial profesional"""
@@ -73,7 +73,7 @@ async def create_profile_by_token(
     """
     user_id = await get_user_id_from_token(token)
     await _validate_user_exists(db, user_id)
-    await _validate_unique_profile(db, user_id)
+    # await _validate_unique_profile(db, user_id)
 
     _validate_credential(profile_data.credential)
     _validate_gender(profile_data.gender)
