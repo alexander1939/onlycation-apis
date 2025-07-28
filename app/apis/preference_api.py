@@ -36,7 +36,6 @@ async def create_my_preferences(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
-    try:
         token = credentials.credentials
         preference = await create_preference_by_token(db, token, preference_data)
         
@@ -51,45 +50,8 @@ async def create_my_preferences(
                 created_at=preference.created_at
             )
         )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
 
-"""
-    Obtiene las preferencias del usuario autenticado
-    - Usa el token JWT para identificar al usuario
-    - Devuelve todos los campos de las preferencias
-"""
-@router.get("/update/me/", 
-           response_model=PreferenceResponse,
-           dependencies=[Depends(auth_required)])
-async def get_my_preferences(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db)
-):
-    try:
-        token = credentials.credentials
-        preference = await get_preference_by_token(db, token)
-        
-        return PreferenceResponse(
-            success=True,
-            message="Preferencias obtenidas exitosamente",
-            data=PreferenceData(
-                educational_level_id=preference.educational_level_id,
-                modality_id=preference.modality_id,
-                location=preference.location,
-                location_description=preference.location_description,
-                created_at=preference.created_at,
-                updated_at=preference.updated_at
-            )
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+
 
 """
     Actualiza las preferencias del usuario autenticado
@@ -97,7 +59,7 @@ async def get_my_preferences(
     - Actualiza solo los campos proporcionados
     - Devuelve solo los campos relevantes para actualización
 """
-@router.put("/my_preferences/",
+@router.put("/update/me/",  
            response_model=PreferenceUpdateResponse,
            dependencies=[Depends(auth_required)])
 async def update_my_preferences(
@@ -105,7 +67,6 @@ async def update_my_preferences(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
-    try:
         token = credentials.credentials
         preference = await update_preference_by_token(db, token, preference_data)
         
@@ -120,8 +81,34 @@ async def update_my_preferences(
                 updated_at=preference.updated_at
             )
         )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
+
+    
+
+"""
+    Obtiene las preferencias del usuario autenticado
+    - Usa el token JWT para identificar al usuario
+    - Devuelve todos los campos de las preferencias
+"""
+@router.get("/me/",  
+           response_model=PreferenceResponse,
+           dependencies=[Depends(auth_required)])
+async def get_my_preferences(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+
+        token = credentials.credentials
+        preference = await get_preference_by_token(db, token)
+        
+        return PreferenceResponse(
+            success=True,
+            message="Preferencias obtenidas exitosamente",
+            data=PreferenceData(
+                educational_level_id=preference.educational_level_id,
+                modality_id=preference.modality_id,
+                location=preference.location,
+                location_description=preference.location_description,
+                created_at=preference.created_at,
+                updated_at=preference.updated_at
+            )
         )
