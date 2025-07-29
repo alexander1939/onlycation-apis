@@ -9,7 +9,6 @@ from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, UpdateB
 
 async def create_benefit(db: AsyncSession, benefit_data: CreateBenefitRequest):
     try:
-        # Verificar que no existe un beneficio con el mismo nombre
         existing_benefit_result = await db.execute(
             select(Benefit).where(Benefit.name == benefit_data.name)
         )
@@ -17,13 +16,11 @@ async def create_benefit(db: AsyncSession, benefit_data: CreateBenefitRequest):
         if existing_benefit:
             raise HTTPException(status_code=400, detail="A benefit with this name already exists")
 
-        # Obtener el status "active"
         status_result = await db.execute(select(Status).where(Status.name == "active"))
         status = status_result.scalar_one_or_none()
         if not status:
             raise HTTPException(status_code=404, detail="Active status not found")
 
-        # Crear el beneficio
         new_benefit = Benefit(
             name=benefit_data.name,
             description=benefit_data.description,
@@ -36,15 +33,12 @@ async def create_benefit(db: AsyncSession, benefit_data: CreateBenefitRequest):
         return new_benefit
 
     except HTTPException as e:
-        # Re-lanzar HTTPException para que llegue al usuario
         raise e
     except Exception as e:
-        # Para errores internos del servidor, usar unexpected_exception
         await unexpected_exception()
 
 async def update_benefit(db: AsyncSession, benefit_id: int, benefit_data: UpdateBenefitRequest):
     try:
-        # Buscar el beneficio
         result = await db.execute(
             select(Benefit)
             .where(Benefit.id == benefit_id)

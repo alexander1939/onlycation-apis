@@ -1,10 +1,21 @@
 from fastapi import APIRouter, Depends, Query
+from app.schemas.suscripcion.payment_subscriptions_schema import SubscribeRequest, SubscribeResponse
 from app.schemas.suscripcion.plan_schema import CreatePlanRequest, CreatePlanResponse, UpdatePlanRequest, UpdatePlanResponse, GetPlansResponse, GetPlanResponse
 from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, CreateBenefitResponse, UpdateBenefitRequest, UpdateBenefitResponse, GetBenefitsResponse, GetBenefitResponse
+from app.services.suscripcion.payment_subscriptions_service import subscribe_user_to_plan
 from app.services.suscripcion.plan_service import create_plan, update_plan, get_all_plans, get_plan_by_id
 from app.services.suscripcion.benefit_service import create_benefit, update_benefit, get_all_benefits, get_benefit_by_id
 from app.apis.deps import auth_required, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
+import stripe
+import os
 
 router = APIRouter()
 
@@ -142,3 +153,36 @@ async def get_benefit_route(benefit_id: int, db: AsyncSession = Depends(get_db))
             "updated_at": benefit.updated_at.isoformat() # type: ignore
         }
     } 
+
+@router.post("/crear-suscripcion")
+async def crear_suscripcion(request: Request):
+    body = await request.json()
+    email = body.get("email")
+    price_id = body.get("price_id")
+
+    if not email or not price_id:
+        return JSONResponse(status_code=400, content={"error": "Faltan datos"})
+
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            customer_email=email,
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url="http://localhost:3000/success",  
+            cancel_url="http://localhost:3000/cancel",
+        )
+        return {"url": session.url}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    
+
+@router.post("/subscribe/", response_model=SubscribeResponse)
+async def subscribe(request: SubscribeRequest, db: AsyncSession = Depends(get_db),
+                    dependencies=[Depends(auth_required)]):
+    result = await subscribe_user_to_plan(db, request.plan_guy)
+    return {
+        "success": True,
+        "message": "Iniciar proceso de suscripción",
+        "data": result
+    }
