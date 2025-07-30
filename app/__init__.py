@@ -55,6 +55,7 @@ from app.apis.auth_api import register_teacher_route
 from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
 from app.apis.suscripcion_api import router as suscripcion_router
+from app.apis.notifications_api import router as notifications_router
 
 
 
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
+    app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
     ##app.include_router()
 
     return app

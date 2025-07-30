@@ -12,6 +12,7 @@ from app.services.validation.exception import unexpected_exception
 from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, UpdateBenefitRequest
 from datetime import datetime, timedelta
 from app.external.stripe_config import stripe
+from app.services.notifications import create_welcome_notification, create_subscription_notification
 
 async def get_active_status(db: AsyncSession):
     """Obtiene el status activo"""
@@ -124,6 +125,16 @@ async def process_successful_payment(db: AsyncSession, session):
         user_id = int(session["metadata"]["user_id"])
         plan_id = int(session["metadata"]["plan_id"])
         
+        # Obtener el usuario y el plan para las notificaciones
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        
+        plan_result = await db.execute(select(Plan).where(Plan.id == plan_id))
+        plan = plan_result.scalar_one_or_none()
+        
+        if not user or not plan:
+            raise HTTPException(status_code=404, detail="Usuario o plan no encontrado")
+        
         # Obtener status activo
         active_status = await get_active_status(db)
         if not active_status:
@@ -154,6 +165,19 @@ async def process_successful_payment(db: AsyncSession, session):
         db.add(subscription)
         await db.commit()
         await db.refresh(subscription)
+
+        # Crear notificaciones automáticas
+        try:
+            # Notificación de bienvenida
+            await create_welcome_notification(db, user)
+            
+            # Notificación específica de suscripción
+            await create_subscription_notification(db, user, plan.name)
+            
+            print(f"✅ Notificaciones creadas para usuario {user_id}")
+        except Exception as e:
+            print(f"⚠️ Error creando notificaciones: {str(e)}")
+            # No fallamos la suscripción si las notificaciones fallan
 
         print(f"Suscripción creada para usuario {user_id}, plan {plan_id}")
 
