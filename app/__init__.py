@@ -33,6 +33,10 @@ from app.models.subscriptions.plan import Plan
 from app.models.subscriptions.subscription import Subscription
 from app.models.subscriptions.payment_subscription import PaymentSubscription
 
+from  app.models.notifications.notifications import Notification
+from  app.models.notifications.user_notifications import User_notification
+
+
 from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_user_admin import create_admin_user
 from app.scripts.databases.create_role import create_role
