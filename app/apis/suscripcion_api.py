@@ -15,6 +15,9 @@ from app.services.suscripcion.plan_service import create_plan, update_plan, get_
 from app.services.suscripcion.benefit_service import create_benefit, update_benefit, get_all_benefits, get_benefit_by_id
 from app.apis.deps import auth_required, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from app.models.subscriptions import Plan
+from app.models.users import User
 
 router = APIRouter()
 
@@ -91,6 +94,54 @@ async def get_plan_route(plan_id: int, db: AsyncSession = Depends(get_db)):
             "updated_at": plan.updated_at.isoformat() # type: ignore
         }
     }
+
+@router.get("/planes-disponibles", response_model=GetPlansResponse)
+async def get_planes_disponibles_para_usuario(
+    db: AsyncSession = Depends(get_db),
+    user_data: dict = Depends(auth_required)
+):
+    """
+    Obtiene los planes disponibles para el rol del usuario autenticado
+    """
+    try:
+        # Obtener el usuario con su rol
+        user_result = await db.execute(
+            select(User).where(User.id == user_data.get("user_id"))
+        )
+        user = user_result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+        # Obtener planes que coincidan con el rol del usuario
+        plans_result = await db.execute(
+            select(Plan).where(
+                Plan.role_id == user.role_id,
+                Plan.status.has(name="active")
+            )
+        )
+        plans = plans_result.scalars().all()
+        
+        return {
+            "success": True,
+            "message": f"Planes disponibles para tu rol ({user.role.name})",
+            "data": [
+                {
+                    "id": plan.id,
+                    "name": plan.name,
+                    "description": plan.description,
+                    "price": plan.price,
+                    "duration": plan.duration,
+                    "guy": plan.guy,
+                    "role_name": user.role.name
+                } for plan in plans
+            ]
+        }
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 # Endpoints para Beneficios
 @router.post("/benefits/", response_model=CreateBenefitResponse, dependencies=[Depends(auth_required)])

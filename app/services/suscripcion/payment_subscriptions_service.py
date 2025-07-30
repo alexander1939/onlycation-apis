@@ -37,6 +37,13 @@ async def create_subscription_session(db: AsyncSession, user: User, plan_id: int
         if not plan.stripe_price_id:
             raise HTTPException(status_code=400, detail="Plan no tiene configuración de Stripe")
 
+        # Validar que el usuario tiene el rol correcto para este plan
+        if user.role_id != plan.role_id:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"No puedes suscribirte a este plan. Este plan está destinado para usuarios con rol '{plan.role.name}' y tu rol es '{user.role.name}'"
+            )
+
         # Crear sesión de checkout de Stripe
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
@@ -102,6 +109,24 @@ async def verify_payment_and_create_subscription(db: AsyncSession, session_id: s
                 "message": "Pago ya fue procesado anteriormente",
                 "payment_status": session.payment_status
             }
+        
+        # Obtener el usuario y el plan para validar roles
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        
+        plan_id = int(session.metadata.get("plan_id"))
+        plan_result = await db.execute(select(Plan).where(Plan.id == plan_id))
+        plan = plan_result.scalar_one_or_none()
+        
+        if not user or not plan:
+            raise HTTPException(status_code=404, detail="Usuario o plan no encontrado")
+        
+        # Validar que el usuario tiene el rol correcto para este plan
+        if user.role_id != plan.role_id:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"No puedes suscribirte a este plan. Este plan está destinado para usuarios con rol '{plan.role.name}' y tu rol es '{user.role.name}'"
+            )
         
         # El pago fue exitoso, guardar en la base de datos
         await process_successful_payment(db, session)
