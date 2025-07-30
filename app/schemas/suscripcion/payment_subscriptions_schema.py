@@ -20,11 +20,6 @@ class VerifyPaymentResponse(BaseModel):
     payment_status: Optional[str] = None
     data: Optional[dict] = None
 
-# Schemas para webhook
-class WebhookResponse(BaseModel):
-    success: bool
-    message: str
-
 # Schema para obtener suscripción del usuario
 class UserSubscriptionResponse(BaseModel):
     success: bool

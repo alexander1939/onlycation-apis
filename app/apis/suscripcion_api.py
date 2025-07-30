@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from app.schemas.suscripcion.payment_subscriptions_schema import (
     SubscribeRequest, SubscribeResponse,
-    VerifyPaymentResponse, WebhookResponse
+    VerifyPaymentResponse
 )
 from app.schemas.suscripcion.plan_schema import CreatePlanRequest, CreatePlanResponse, UpdatePlanRequest, UpdatePlanResponse, GetPlansResponse, GetPlanResponse
 from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, CreateBenefitResponse, UpdateBenefitRequest, UpdateBenefitResponse, GetBenefitsResponse, GetBenefitResponse
@@ -9,7 +9,6 @@ from app.services.suscripcion.payment_subscriptions_service import (
     subscribe_user_to_plan, 
     create_subscription_session, 
     verify_payment_and_create_subscription,
-    handle_stripe_webhook,
     get_user_by_token
 )
 from app.services.suscripcion.plan_service import create_plan, update_plan, get_all_plans, get_plan_by_id
@@ -154,6 +153,7 @@ async def get_benefit_route(benefit_id: int, db: AsyncSession = Depends(get_db))
         }
     }
 
+# Endpoints para Suscripciones
 @router.post("/crear-suscripcion", response_model=SubscribeResponse)
 async def crear_suscripcion(
     request: SubscribeRequest,
@@ -193,23 +193,6 @@ async def verificar_pago(
         "message": result["message"],
         "payment_status": result.get("payment_status"),
         "data": result.get("data")
-    }
-
-@router.post("/webhook/stripe", response_model=WebhookResponse)
-async def stripe_webhook(
-    request: Request,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Webhook para procesar eventos de Stripe
-    """
-    payload = await request.body()
-    sig_header = request.headers.get("stripe-signature")
-    result = await handle_stripe_webhook(db, payload, sig_header)
-    
-    return {
-        "success": result["success"],
-        "message": "Webhook procesado correctamente"
     } 
 
 

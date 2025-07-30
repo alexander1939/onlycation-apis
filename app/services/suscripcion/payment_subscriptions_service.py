@@ -302,41 +302,7 @@ async def cancel_user_subscription(db: AsyncSession, user_id: int):
     except Exception as e:
         await unexpected_exception()
 
-async def handle_stripe_webhook(db: AsyncSession, payload: bytes, sig_header: str):
-    """
-    Maneja el webhook de Stripe
-    """
-    try:
-        if not sig_header:
-            raise HTTPException(status_code=400, detail="Falta stripe-signature")
 
-        # Verificar el webhook
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
-            )
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Error verificando webhook: {str(e)}")
-
-        # Procesar eventos
-        if event["type"] == "checkout.session.completed":
-            session = event["data"]["object"]
-            await process_successful_payment(db, session)
-            
-        elif event["type"] == "customer.subscription.updated":
-            subscription = event["data"]["object"]
-            await update_subscription_status(db, subscription)
-            
-        elif event["type"] == "customer.subscription.deleted":
-            subscription = event["data"]["object"]
-            await cancel_subscription(db, subscription)
-
-        return {"success": True}
-
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        await unexpected_exception()
 
 async def get_user_by_token(db: AsyncSession, user_id: int):
     """
