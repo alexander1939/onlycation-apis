@@ -33,6 +33,10 @@ from app.models.subscriptions.plan import Plan
 from app.models.subscriptions.subscription import Subscription
 from app.models.subscriptions.payment_subscription import PaymentSubscription
 
+from  app.models.notifications.notifications import Notification
+from  app.models.notifications.user_notifications import User_notification
+
+
 from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_user_admin import create_admin_user
 from app.scripts.databases.create_role import create_role
@@ -40,6 +44,8 @@ from app.scripts.databases.create_educational_level import create_educational_le
 from app.scripts.databases.create_modality import create_modality
 from app.scripts.databases.create_privilege import create_privileges
 from app.scripts.databases.create_privilege_role import create_privileges_role
+from app.scripts.databases.create_plan import create_premium_plan
+from app.scripts.databases.create_benefit import create_benefit
 
 from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.auths.register_service import RegisterUserRequest
@@ -49,7 +55,12 @@ from app.apis.auth_api import register_teacher_route
 from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
 from app.apis.profile_api import router as profile_router
+from app.apis.suscripcion_api import router as suscripcion_router
+from app.apis.notifications_api import router as notifications_router
 
+
+
+from fastapi.middleware.cors import CORSMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,6 +81,8 @@ async def lifespan(app: FastAPI):
     await create_privileges()
     await create_privileges_role()
     await create_admin_user()
+    await create_premium_plan()
+    await create_benefit()
 
     yield
 
@@ -79,15 +92,33 @@ async def lifespan(app: FastAPI):
     - Aplica la función `lifespan` para la inicialización.
     - Carga las rutas necesarias (por ahora, solo las de autenticación).
 """
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="onlyCation", 
         lifespan=lifespan  
     )
+
+    origins = [
+        "http://localhost:5173",  
+    ]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
     # Agrega el router de autenticación con un prefijo y una etiqueta
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
+    app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
+    app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
     ##app.include_router()
 
     return app
