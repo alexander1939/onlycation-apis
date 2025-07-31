@@ -24,6 +24,22 @@ async def create_subscription_session(db: AsyncSession, user: User, plan_id: int
     Crea una sesión de checkout de Stripe para suscripción
     """
     try:
+        # Validar si el usuario ya tiene una suscripción activa
+        existing_subscription_result = await db.execute(
+            select(Subscription)
+            .where(
+                Subscription.user_id == user.id,
+                Subscription.status.has(name="active"),
+                Subscription.end_date > datetime.utcnow()
+            )
+        )
+        existing_subscription = existing_subscription_result.scalar_one_or_none()
+        if existing_subscription:
+            raise HTTPException(
+                status_code=400,
+                detail="Ya tienes una suscripción activa. No puedes suscribirte a otro plan hasta que expire o canceles la actual."
+            )
+
         # Buscar el plan por ID
         plan_result = await db.execute(
             select(Plan).where(Plan.id == plan_id, Plan.status.has(name="active"))
@@ -149,7 +165,17 @@ async def process_successful_payment(db: AsyncSession, session):
     try:
         user_id = int(session["metadata"]["user_id"])
         plan_id = int(session["metadata"]["plan_id"])
-        
+
+        # Obtener el PaymentIntent ID desde la sesión de Stripe
+        stripe_subscription_id = session.get("subscription")
+        payment_intent_id = None
+        if stripe_subscription_id:
+            stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+            latest_invoice_id = stripe_subscription.get("latest_invoice")
+            if latest_invoice_id:
+                invoice = stripe.Invoice.retrieve(latest_invoice_id)
+                payment_intent_id = invoice.get("payment_intent")
+
         # Obtener el usuario y el plan para las notificaciones
         user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
@@ -170,8 +196,10 @@ async def process_successful_payment(db: AsyncSession, session):
             plan_id=plan_id,
             user_id=user_id,
             status_id=active_status.id,
-            Payment_date=datetime.utcnow()
+            payment_date=datetime.utcnow(),  # <-- Correcto
+            stripe_payment_intent_id=payment_intent_id
         )
+
         
         db.add(payment_subscription)
         await db.commit()
@@ -205,12 +233,11 @@ async def process_successful_payment(db: AsyncSession, session):
             # No fallamos la suscripción si las notificaciones fallan
 
         print(f"Suscripción creada para usuario {user_id}, plan {plan_id}")
-
-    except HTTPException as e:
-        raise e
     except Exception as e:
-        await unexpected_exception()
-
+        import traceback
+        print("ERROR:", e)
+        traceback.print_exc()
+        raise e
 async def subscribe_user_to_plan(db: AsyncSession, user: User, plan_guy: str):
     """
     Función mejorada para suscribir usuario a un plan
