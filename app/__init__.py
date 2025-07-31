@@ -40,6 +40,7 @@ from app.scripts.databases.create_educational_level import create_educational_le
 from app.scripts.databases.create_modality import create_modality
 from app.scripts.databases.create_privilege import create_privileges
 from app.scripts.databases.create_privilege_role import create_privileges_role
+from app.scripts.databases.create_price_ranges import create_prices_range
 
 from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.auths.register_service import RegisterUserRequest
@@ -50,6 +51,7 @@ from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
 from app.apis.profile_api import router as profile_router
 from app.apis.preference_api import router as preference_router
+from app.apis.price_api import router as price_router
 
 
 @asynccontextmanager
@@ -71,6 +73,7 @@ async def lifespan(app: FastAPI):
     await create_privileges()
     await create_privileges_role()
     await create_admin_user()
+    await create_prices_range()
 
     yield
 
@@ -90,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
     app.include_router(preference_router, prefix="/api/preferences", tags=["Preferences"])
+    app.include_router(price_router, prefix="/api/prices", tags=["Prices"])
     ##app.include_router()
 
     return app
