@@ -38,6 +38,9 @@ from app.models.subscriptions.payment_subscription import PaymentSubscription
 from  app.models.notifications.notifications import Notification
 from  app.models.notifications.user_notifications import User_notification
 
+from app.models.booking.bookings import Booking
+from app.models.booking.payment_bookings import PaymentBooking
+from app.models.booking.confirmation import Confirmation
 
 from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_user_admin import create_admin_user
@@ -64,6 +67,7 @@ from app.apis.preference_api import router as preference_router
 from app.apis.price_api import router as price_router
 from app.apis.suscripcion_api import router as suscripcion_router
 from app.apis.notifications_api import router as notifications_router
+from app.apis.booking_api import router as booking_router
 
 
 
@@ -131,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(price_router, prefix="/api/prices", tags=["Prices"])
     app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
     app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
+    app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
     ##app.include_router()
 
     return app

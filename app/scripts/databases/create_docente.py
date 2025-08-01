@@ -171,7 +171,7 @@ async def crear_docente():
             preference_id=preferencia.id,
             day_of_week=1,  # Lunes
             start_time=datetime.utcnow(),
-            end_time=datetime.utcnow() + timedelta(hours=2)
+            end_time=datetime.utcnow() + timedelta(hours=9)
         )
         db.add(disponibilidad)
         print("Disponibilidad creada.")
