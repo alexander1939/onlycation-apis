@@ -205,7 +205,7 @@ async def get_benefit_route(benefit_id: int, db: AsyncSession = Depends(get_db))
     }
 
 # Endpoints para Suscripciones
-@router.post("/crear-suscripcion", response_model=SubscribeResponse)
+@router.post("/crear-suscripcion", response_model=SubscribeResponse, dependencies=[Depends(auth_required)])
 async def crear_suscripcion(
     request: SubscribeRequest,
     db: AsyncSession = Depends(get_db),
@@ -228,7 +228,7 @@ async def crear_suscripcion(
         }
     }
 
-@router.get("/verificar-pago/{session_id}", response_model=VerifyPaymentResponse)
+@router.get("/verificar-pago/{session_id}", response_model=VerifyPaymentResponse, dependencies=[Depends(auth_required)])
 async def verificar_pago(
     session_id: str,
     db: AsyncSession = Depends(get_db),

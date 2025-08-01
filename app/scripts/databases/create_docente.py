@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from app.models.common.stripe_price import StripePrice
 from app.external.stripe_config import stripe_config
 import stripe
+from app.cores.security import get_password_hash
+
 
 
 async def crear_docente():
@@ -24,7 +26,7 @@ async def crear_docente():
                 first_name="Juan",
                 last_name="Pérez",
                 email="docente_prueba@example.com",
-                password="hashed_password",  # Usa hash real en producción
+                password=get_password_hash("12345678"),  # Contraseña de prueba hasheada
                 role_id=1,  # Asume que 1 es el rol de docente
                 status_id=1  # Asume que 1 es status activo
             )
