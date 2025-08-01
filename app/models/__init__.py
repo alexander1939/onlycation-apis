@@ -22,3 +22,6 @@ from .subscriptions.plan import Plan
 from .subscriptions.subscription import Subscription
 from .subscriptions.payment_subscription import PaymentSubscription
 
+from .notifications.notifications import Notification
+from .notifications.user_notifications import User_notification
+

@@ -14,3 +14,4 @@ pytest-asyncio
 pytest-flake8
 python-jose[cryptography]
 fastapi-mail
+stripe

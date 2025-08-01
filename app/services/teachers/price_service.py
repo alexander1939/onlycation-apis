@@ -44,6 +44,31 @@ def _validate_selected_price_within_range(selected_price: float, price_range_id:
     if not (min_price <= selected_price <= max_price):
         raise ValueError(f"El precio debe estar entre ${min_price} y ${max_price} para este rango")
 
+async def _validate_price_range_matches_educational_level(
+    db: AsyncSession,
+    price_range_id: int,
+    preference_id: int
+):
+    # Obtener el educational_level_id de la preferencia
+    pref_result = await db.execute(
+        select(Preference.educational_level_id).where(Preference.id == preference_id)
+    )
+    pref_level_id = pref_result.scalar_one_or_none()
+    if not pref_level_id:
+        raise ValueError("No se encontró el nivel educativo de la preferencia")
+
+    # Obtener el educational_level_id del rango de precios
+    range_result = await db.execute(
+        select(PriceRange.educational_level_id).where(PriceRange.id == price_range_id)
+    )
+    range_level_id = range_result.scalar_one_or_none()
+    if not range_level_id:
+        raise ValueError("No se encontró el nivel educativo del rango de precios")
+
+    # Comparar los niveles educativos
+    if pref_level_id != range_level_id:
+        raise ValueError("El rango de precios no corresponde al nivel educativo seleccionado")
+
 # ==================== FUNCIONES PRINCIPALES ====================
 
 async def get_user_id_from_token(token: str) -> int:
@@ -65,6 +90,7 @@ async def create_price_by_token(
     await _validate_unique_price(db, user_id)
     await _validate_price_range_exists(db, price_data.price_range_id)
     await _validate_preference_exists(db, price_data.preference_id, user_id)
+    await _validate_price_range_matches_educational_level(db, price_data.price_range_id, price_data.preference_id)
     _validate_selected_price_within_range(price_data.selected_prices, price_data.price_range_id)
 
     # Calcular extra_hour_price automáticamente

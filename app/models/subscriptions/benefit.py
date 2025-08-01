@@ -16,6 +16,7 @@ class Benefit(Base):
     updated_at = Column(DATETIME(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     status = relationship("Status", backref="benefits")
+    plans = relationship("Plan", secondary="plan_benefits", back_populates="benefits")
 
     def __repr__(self):
         return f"<Benefit(name={self.name}, description={self.description}, status_id={self.status_id})>"

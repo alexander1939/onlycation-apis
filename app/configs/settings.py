@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     MAIL_STARTTLS: bool
     MAIL_SSL_TLS: bool
 
+    STRIPE_SECRET_KEY: str
+    STRIPE_PUBLIC_KEY: str
+
     model_config = ConfigDict(env_file=".env")
 
 
