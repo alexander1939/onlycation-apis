@@ -1,6 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.apis.deps import auth_required
 from app.apis.deps import auth_required, get_db
 from app.schemas.user.profile_schema import ProfileCreateRequest, ProfileUpdateRequest, ProfileData, ProfileResponse, ProfileCreateData, ProfileCreateResponse, ProfileUpdateData, ProfileUpdateResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -18,24 +17,33 @@ from app.services.user.profile_service import (
 
 
 """
-    Crea un nuevo perfil
-    - Devuelve solo los campos relevantes para creación
-    - Estructura de respuesta optimizada para este caso
+    Crea un nuevo perfil para el usuario autenticado
+    - Requiere token JWT válido
+    - El user_id se obtiene del token automáticamente
+    - Valida los datos del perfil
     """
-@router.post("/create/", response_model=ProfileCreateResponse)
+@router.post("/create/", 
+            response_model=ProfileCreateResponse,
+            dependencies=[Depends(auth_required)])  
 async def create_profile_route(
     profile_data: ProfileCreateRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials = Depends(security),  
     db: AsyncSession = Depends(get_db)
 ):
-    """Endpoint para creación de perfil"""
-    profile = await create_profile_by_token(db, credentials.credentials, profile_data)
+    
+    token = credentials.credentials  
+    profile = await create_profile_by_token(db, token, profile_data)  
+    
     return ProfileCreateResponse(
         success=True,
         message="Perfil creado exitosamente",
-        data=ProfileCreateData.from_orm(profile)
+        data=ProfileCreateData(
+            credential=profile.credential,
+            gender=profile.gender,
+            sex=profile.sex,
+            created_at=profile.created_at
+        )
     )
-
 
 """
     Actualiza el perfil del usuario autenticado

@@ -10,14 +10,14 @@ async def create_prices_range():
         try:
             result = await db.execute(select(PriceRange))
             prices_ranges = result.scalars().all()
-
+            
             if not prices_ranges:
                 # Obtener el status "active"
                 status_result = await db.execute(
                     select(Status).where(Status.name == "active")
                 )
                 active_status = status_result.scalars().first()
-
+                
                 if not active_status:
                     print("Error: 'active' status not found. Please create statuses first.")
                     return
@@ -25,12 +25,12 @@ async def create_prices_range():
                 # Obtener niveles educativos
                 educational_levels_result = await db.execute(select(EducationalLevel))
                 educational_levels = {level.name: level.id for level in educational_levels_result.scalars().all()}
-
+                
                 if not educational_levels:
                     print("Error: No educational levels found. Please create educational levels first.")
                     return
 
-
+              
                 prices_ranges_list = []
 
                 if "Preparatoria" in educational_levels:

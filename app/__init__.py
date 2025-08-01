@@ -46,6 +46,7 @@ from app.scripts.databases.create_educational_level import create_educational_le
 from app.scripts.databases.create_modality import create_modality
 from app.scripts.databases.create_privilege import create_privileges
 from app.scripts.databases.create_privilege_role import create_privileges_role
+from app.scripts.databases.create_price_ranges import create_prices_range
 from app.scripts.databases.create_plan import create_premium_plan
 from app.scripts.databases.create_benefit import create_benefit
 from app.scripts.databases.create_price_ranges import create_prices_range
@@ -59,6 +60,8 @@ from app.apis.auth_api import register_teacher_route
 from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
 from app.apis.profile_api import router as profile_router
+from app.apis.preference_api import router as preference_router
+from app.apis.price_api import router as price_router
 from app.apis.suscripcion_api import router as suscripcion_router
 from app.apis.notifications_api import router as notifications_router
 
@@ -85,6 +88,7 @@ async def lifespan(app: FastAPI):
     await create_privileges()
     await create_privileges_role()
     await create_admin_user()
+    await create_prices_range()
     await create_premium_plan()
     await create_benefit()
     await create_prices_range()
@@ -123,6 +127,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
+    app.include_router(preference_router, prefix="/api/preferences", tags=["Preferences"])
+    app.include_router(price_router, prefix="/api/prices", tags=["Prices"])
     app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
     app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
     ##app.include_router()
