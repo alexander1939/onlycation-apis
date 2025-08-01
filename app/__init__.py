@@ -14,6 +14,7 @@ from app.models.common.modality import Modality
 from app.models.common.educational_level import EducationalLevel
 from app.models.common.verification_code import VerificationCode
 from app.models.common.price_range import PriceRange
+from app.models.common.stripe_price import StripePrice
 
 from app.models.users.user import User
 from app.models.users.preference import Preference
@@ -22,6 +23,7 @@ from app.models.users.preference import Preference
 from app.models.teachers.document import Document
 from app.models.teachers.price import Price
 from app.models.teachers.video import Video
+from app.models.teachers.availability import Availability
 
 
 from app.models.privileges.privilege import Privilege
@@ -46,6 +48,8 @@ from app.scripts.databases.create_privilege import create_privileges
 from app.scripts.databases.create_privilege_role import create_privileges_role
 from app.scripts.databases.create_plan import create_premium_plan
 from app.scripts.databases.create_benefit import create_benefit
+from app.scripts.databases.create_price_ranges import create_prices_range
+from app.scripts.databases.create_docente import crear_docente
 
 from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.auths.register_service import RegisterUserRequest
@@ -83,6 +87,8 @@ async def lifespan(app: FastAPI):
     await create_admin_user()
     await create_premium_plan()
     await create_benefit()
+    await create_prices_range()
+    await crear_docente()
 
     yield
 
