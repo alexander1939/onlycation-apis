@@ -19,7 +19,7 @@ async def crear_booking(
     db: AsyncSession = Depends(get_db),
     user_data: dict = Depends(auth_required)
 ):
-    user = await get_user_by_token(db, user_data.get("user_id"))  # ← así obtienes el usuario por el token
+    user = await get_user_by_token(db, user_data.get("user_id"))  
     result = await create_booking_payment_session(db, user, request)
     return {
         "success": True,
