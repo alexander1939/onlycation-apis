@@ -2,6 +2,8 @@ from sqlalchemy import select
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import stripe
+from app.models.common.stripe_price import StripePrice
 from app.models import Price, Preference, PriceRange, User
 from app.schemas.teachers.price_schema import PriceCreateRequest
 from app.cores.token import verify_token
@@ -95,6 +97,66 @@ async def create_price_by_token(
 
     # Calcular extra_hour_price automáticamente
     auto_extra_price = round(price_data.selected_prices / 2, 2)
+    tipo = "tutorias"
+    currency = "mxn"
+
+    # Buscar o crear StripePrice para el precio principal
+    stripe_price_result = await db.execute(
+        select(StripePrice).where(
+            StripePrice.amount == price_data.selected_prices,
+            StripePrice.type == tipo
+        )
+    )
+    stripe_price_entry = stripe_price_result.scalar_one_or_none()
+
+    if not stripe_price_entry:
+        product = stripe.Product.create(
+            name=f"Tutoría precio {price_data.selected_prices}",
+            description="Pago por tutoría individual"
+        )
+        price = stripe.Price.create(
+            unit_amount=int(price_data.selected_prices * 100),
+            currency=currency,
+            product=product.id
+        )
+        stripe_price_entry = StripePrice(
+            stripe_product_id=product.id,
+            stripe_price_id=price.id,
+            amount=price_data.selected_prices,
+            currency=currency,
+            type=tipo
+        )
+        db.add(stripe_price_entry)
+        await db.flush()
+
+    # Buscar o crear StripePrice para el precio extra hora
+    stripe_extra_result = await db.execute(
+        select(StripePrice).where(
+            StripePrice.amount == auto_extra_price,
+            StripePrice.type == tipo
+        )
+    )
+    stripe_extra_entry = stripe_extra_result.scalar_one_or_none()
+
+    if not stripe_extra_entry:
+        product_extra = stripe.Product.create(
+            name=f"Tutoría precio {auto_extra_price}",
+            description="Pago por hora extra de tutoría"
+        )
+        price_extra = stripe.Price.create(
+            unit_amount=int(auto_extra_price * 100),
+            currency=currency,
+            product=product_extra.id
+        )
+        stripe_extra_entry = StripePrice(
+            stripe_product_id=product_extra.id,
+            stripe_price_id=price_extra.id,
+            amount=auto_extra_price,
+            currency=currency,
+            type=tipo
+        )
+        db.add(stripe_extra_entry)
+        await db.flush()
 
     # Crear registro de precio
     db_price = Price(
@@ -103,6 +165,10 @@ async def create_price_by_token(
         price_range_id=price_data.price_range_id,
         selected_prices=price_data.selected_prices,
         extra_hour_price=auto_extra_price,
+        stripe_product_id=stripe_price_entry.stripe_product_id,
+        stripe_price_id=stripe_price_entry.stripe_price_id,
+        stripe_extra_product_id=stripe_extra_entry.stripe_product_id,
+        stripe_extra_price_id=stripe_extra_entry.stripe_price_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
