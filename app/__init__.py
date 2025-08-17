@@ -68,8 +68,8 @@ from app.apis.price_api import router as price_router
 from app.apis.suscripcion_api import router as suscripcion_router
 from app.apis.notifications_api import router as notifications_router
 from app.apis.booking_api import router as booking_router
-
-
+from app.apis.confirm_teacher_api import router as confirm_teacher_router
+from app.apis.confirm_student_api import router as confirm_student_router
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -136,6 +136,9 @@ def create_app() -> FastAPI:
     app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
     app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
     app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
+    app.include_router(confirm_teacher_router, prefix="/api/confirmation", tags=["Confirmation"])
+    app.include_router(confirm_student_router, prefix="/api/confirmation", tags=["Confirmation"])
+
     ##app.include_router()
 
     return app
