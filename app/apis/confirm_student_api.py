@@ -27,7 +27,7 @@ async def confirm_student(
     db=db,
     token=token,
     confirmation_value=confirmation_data.confirmation,
-    payment_booking_id=confirmation_data.payment_booking_id
+    payment_booking_id=0
 )
 
 

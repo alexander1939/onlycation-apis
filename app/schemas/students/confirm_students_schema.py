@@ -3,7 +3,7 @@ from typing import Optional
 
 class StudentConfirmationCreateRequest(BaseModel):
     
-    payment_booking_id: int 
+    #payment_booking_id: int 
     confirmation: bool  # True o False
 
     model_config = ConfigDict(from_attributes=True)

@@ -3,8 +3,8 @@ from typing import Optional
 from datetime import datetime
 
 class ConfirmationCreateRequest(BaseModel):
-    student_id: int
-    payment_booking_id: int 
+    #student_id: int
+    #payment_booking_id: int 
     confirmation: bool  # True o False
 
     model_config = ConfigDict(from_attributes=True)
