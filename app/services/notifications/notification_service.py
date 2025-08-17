@@ -100,6 +100,89 @@ async def create_subscription_notification(db: AsyncSession, user: User, plan_na
         await db.rollback()
         await unexpected_exception()
 
+
+async def create_booking_payment_notification(db: AsyncSession, user_id: int, payment_booking_id: int):
+    """
+    Crea una notificación de confirmación de pago de reserva
+    solo si no existe previamente.
+    """
+    try:
+        # Verificar si ya existe una notificación para este pago
+        existing = await db.execute(
+            select(User_notification)
+            .join(Notification)
+            .where(
+                User_notification.user_id == user_id,
+                Notification.type == "booking_payment",
+            )
+        )
+        if existing.scalar_one_or_none():
+            return  # Ya existe, no creamos otra
+
+        # Crear la notificación base (solo una vez para este tipo+referencia)
+        notification = Notification(
+            title="Pago de reserva confirmado",
+            message="Tu pago para la reserva ha sido confirmado con éxito.",
+            type="booking_payment",
+        )
+        db.add(notification)
+        await db.flush()
+
+        # Asociar la notificación al usuario
+        user_notification = User_notification(
+            notification_id=notification.id,
+            user_id=user_id,
+            is_read=False
+        )
+        db.add(user_notification)
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+
+async def create_teacher_booking_notification(
+    db: AsyncSession, teacher_id: int, booking_id: int, start_time: datetime, end_time: datetime
+):
+    """
+    Crea una notificación para el profesor sobre una nueva reserva.
+    """
+    try:
+        # Verificar si ya existe una notificación para esta reserva
+        existing = await db.execute(
+            select(User_notification)
+            .join(Notification)
+            .where(
+                User_notification.user_id == teacher_id,
+                Notification.type == "new_booking",
+            )
+        )
+        if existing.scalar_one_or_none():
+            return  # Ya existe, no duplicar
+
+        # Crear la notificación base
+        notification = Notification(
+            title="Nueva reserva recibida",
+            message=f"Tienes una nueva reserva programada para el {start_time.strftime('%d/%m/%Y %H:%M')} hasta el {end_time.strftime('%d/%m/%Y %H:%M')}.",
+            type="new_booking",
+        )
+        db.add(notification)
+        await db.flush()
+
+        # Asociar la notificación al profesor
+        user_notification = User_notification(
+            notification_id=notification.id,
+            user_id=teacher_id,
+            is_read=False
+        )
+        db.add(user_notification)
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
 async def get_user_notifications(db: AsyncSession, user_id: int, limit: int = 10):
     """
     Obtiene las notificaciones de un usuario

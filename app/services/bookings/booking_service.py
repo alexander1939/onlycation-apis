@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from app.models.teachers.availability import Availability
+from app.services.notifications.notification_service import create_booking_payment_notification, create_teacher_booking_notification
 
 async def get_active_status(db: AsyncSession):
     result = await db.execute(select(Status).where(Status.name == "active"))
@@ -131,16 +132,23 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
     start_time = parse_datetime(start_time_raw)
     end_time = parse_datetime(end_time_raw)
 
+    room_name = f"class-{booking.id}-{user_id}"
+    class_link = f"https://meet.jit.si/{room_name}"
+
     # Crear Booking
     booking = Booking(
         user_id=user_id,
         availability_id=int(session.metadata["availability_id"]),
         start_time=start_time,
         end_time=end_time,
+        class_space=class_link,
         status_id=(await get_active_status(db)).id
     )
     db.add(booking)
     await db.flush()
+
+    
+
 
     # Recarga el booking con la relación availability
     booking_result = await db.execute(
@@ -167,6 +175,16 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
         payment_booking_id=payment_booking.id
     )
     db.add(confirmation)
+    await create_booking_payment_notification(db, user_id, payment_booking.id)
+    # Crear notificación para el profesor
+    await create_teacher_booking_notification(
+        db,
+        teacher_id=booking.availability.user_id,
+        booking_id=booking.id,
+        start_time=start_time,
+        end_time=end_time
+    )
+
     await db.commit()
 
     return {
