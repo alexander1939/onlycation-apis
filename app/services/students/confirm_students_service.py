@@ -31,15 +31,32 @@ async def create_confirmation_by_student(
     student_id = await get_student_id_from_token(token)
     await _validate_student_exists(db, student_id)
 
-    # 🔹 Buscar la confirmación existente (del docente)
+    # 🔹 Buscar la confirmación existente (que debe haber creado el docente)
     result = await db.execute(
         select(Confirmation).where(Confirmation.payment_booking_id == payment_booking_id)
     )
     confirmation = result.scalars().first()
     if not confirmation:
-        raise HTTPException(status_code=404, detail="No existe confirmación previa del docente para este PaymentBooking")
+        raise HTTPException(
+            status_code=404,
+            detail="No existe confirmación previa del docente para este PaymentBooking"
+        )
 
-    # 🔹 Actualizar confirmación del estudiante con el student_id del token
+    # 🔹 Validar que el estudiante solo pueda confirmar una vez
+    if confirmation.confirmation_date_student:
+        raise HTTPException(
+            status_code=400,
+            detail="El estudiante ya ha confirmado y no puede volver a hacerlo."
+        )
+
+    # 🔹 Validar que el mismo estudiante sea el que está confirmando
+    if confirmation.student_id and confirmation.student_id != student_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Este PaymentBooking ya tiene un estudiante diferente asignado."
+        )
+
+    # 🔹 Actualizar confirmación del estudiante
     confirmation.student_id = student_id
     confirmation.confirmation_date_student = confirmation_value
     confirmation.updated_at = datetime.utcnow()

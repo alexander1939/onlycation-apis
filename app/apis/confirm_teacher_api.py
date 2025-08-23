@@ -27,7 +27,7 @@ async def confirm_teacher(
     token=token,
     confirmation_value=confirmation_data.confirmation,
     student_id=0,
-    payment_booking_id=0
+    payment_booking_id=1
 )
 
 
@@ -37,8 +37,8 @@ async def confirm_teacher(
     data=ConfirmationData(
         id=confirmation.id,
         teacher_id=confirmation.teacher_id,
-        student_id=confirmation.student_id,               # 👈 faltaba
-        payment_booking_id=confirmation.payment_booking_id, # 👈 faltaba
+        student_id=confirmation.student_id,               
+        payment_booking_id=confirmation.payment_booking_id,
         confirmation_date_teacher=confirmation.confirmation_date_teacher
     )
 )
