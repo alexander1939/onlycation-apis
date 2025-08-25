@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fastapi import Form, File, UploadFile, HTTPException
+from typing import Optional
+
 from app.apis.deps import auth_required, get_db
 from app.schemas.students.confirm_students_schema import (
     StudentConfirmationCreateRequest,
@@ -17,28 +20,36 @@ router = APIRouter()
             response_model=StudentConfirmationCreateResponse,
             dependencies=[Depends(auth_required)])
 async def confirm_student(
-    confirmation_data: StudentConfirmationCreateRequest, 
+    confirmation: bool = Form(...),                 # 👈 en vez de schema
+    evidence_file: UploadFile = File(None),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
     token = credentials.credentials
 
-    confirmation = await create_confirmation_by_student(
-    db=db,
-    token=token,
-    confirmation_value=confirmation_data.confirmation,
-    payment_booking_id=1
-)
+    # 🔹 Validación: si confirmation es False, debe venir archivo
+    if not confirmation and evidence_file is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Evidence file is required when confirmation is false"
+        )
 
+    confirmation_obj = await create_confirmation_by_student(
+        db=db,
+        token=token,
+        confirmation_value=confirmation,
+        payment_booking_id=1,   # 👈 fijo como en teacher
+        evidence_file=evidence_file
+    )
 
     return StudentConfirmationCreateResponse(
         success=True,
         message="Confirmación del estudiante registrada exitosamente",
         data=StudentConfirmationData(
-            id=confirmation.id,
-            teacher_id=confirmation.teacher_id,       # sacado del booking
-            student_id=confirmation.student_id,       # del token
-            payment_booking_id=confirmation.payment_booking_id,
-            confirmation_date_student=confirmation.confirmation_date_student
+            id=confirmation_obj.id,
+            teacher_id=confirmation_obj.teacher_id,
+            student_id=confirmation_obj.student_id,
+            payment_booking_id=confirmation_obj.payment_booking_id,
+            confirmation_date_student=confirmation_obj.confirmation_date_student
         )
     )
