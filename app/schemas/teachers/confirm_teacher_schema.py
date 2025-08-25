@@ -6,6 +6,7 @@ class ConfirmationCreateRequest(BaseModel):
     #student_id: int
     #payment_booking_id: int 
     confirmation: bool  # True o False
+    evidence: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -15,6 +16,7 @@ class ConfirmationData(BaseModel):
     student_id: int
     payment_booking_id: int
     confirmation_date_teacher: Optional[bool] = None
+    evidence_teacher: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -22,3 +24,4 @@ class ConfirmationCreateResponse(BaseModel):
     success: bool
     message: str
     data: ConfirmationData
+

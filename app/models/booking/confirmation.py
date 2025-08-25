@@ -11,7 +11,7 @@ class Confirmation(Base):
     teacher_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     student_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     payment_booking_id = Column(Integer, ForeignKey("payment_bookings.id"), nullable=False)
-    confirmation_date_teacher = Column(Boolean, default=False, nullable=False)
+    confirmation_date_teacher = Column(Boolean, nullable=True, default=None)
     confirmation_date_student = Column(Boolean, nullable=True, default=None)
     evidence_student = Column(String(255), nullable=True)
     evidence_teacher = Column(String(255), nullable=True)

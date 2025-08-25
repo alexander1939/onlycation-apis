@@ -20,7 +20,7 @@ router = APIRouter()
             response_model=StudentConfirmationCreateResponse,
             dependencies=[Depends(auth_required)])
 async def confirm_student(
-    confirmation: bool = Form(...),                 # 👈 en vez de schema
+    confirmation: bool = Form(...),                
     evidence_file: UploadFile = File(None),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
@@ -31,14 +31,14 @@ async def confirm_student(
     if not confirmation and evidence_file is None:
         raise HTTPException(
             status_code=400,
-            detail="Evidence file is required when confirmation is false"
+            detail="Es necesario subir la evidencia"
         )
 
     confirmation_obj = await create_confirmation_by_student(
         db=db,
         token=token,
         confirmation_value=confirmation,
-        payment_booking_id=1,   # 👈 fijo como en teacher
+        payment_booking_id=1,   
         evidence_file=evidence_file
     )
 

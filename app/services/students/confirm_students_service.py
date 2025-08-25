@@ -91,7 +91,7 @@ async def create_confirmation_by_student(
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(evidence_file.file, buffer)
 
-        confirmation.evidence_student = f"evidence/student/{unique_name}"
+        confirmation.evidence_student = unique_name
 
     # 🔹 Guardar confirmación
     confirmation.student_id = student_id
