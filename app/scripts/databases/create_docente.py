@@ -5,6 +5,7 @@ from app.models.users.profile import Profile
 from app.models.users.preference import Preference
 from app.models.teachers.price import Price
 from app.models.teachers.availability import Availability
+from app.models.teachers.wallet import Wallet
 from sqlalchemy import select
 from datetime import datetime, timedelta, time
 from app.models.common.stripe_price import StripePrice
@@ -194,5 +195,22 @@ async def crear_docente():
         else:
             print("La disponibilidad ya existe.")
 
+        # Crear wallet con cuenta Stripe activa
+        wallet_result = await db.execute(
+            select(Wallet).where(Wallet.user_id == docente.id)
+        )
+        wallet = wallet_result.scalar_one_or_none()
+        if not wallet:
+            wallet = Wallet(
+                user_id=docente.id,
+                stripe_account_id="acct_1RzrVLRvLAM1ndJe",  # Cuenta Stripe activa de prueba
+                stripe_bank_status="active",  # Estado activo para pruebas
+                stripe_setup_url=None  # No necesita setup URL porque ya está activo
+            )
+            db.add(wallet)
+            print("Wallet creado con cuenta Stripe activa.")
+        else:
+            print("El wallet ya existe.")
+
         await db.commit()
-        print("Docente de prueba creado con datos relacionados.")
+        print("Docente de prueba creado con datos relacionados y wallet activo.")
