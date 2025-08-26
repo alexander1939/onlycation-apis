@@ -24,6 +24,7 @@ from app.models.teachers.document import Document
 from app.models.teachers.price import Price
 from app.models.teachers.video import Video
 from app.models.teachers.availability import Availability
+from app.models.teachers.wallet import Wallet
 
 
 from app.models.privileges.privilege import Privilege
@@ -68,6 +69,7 @@ from app.apis.price_api import router as price_router
 from app.apis.suscripcion_api import router as suscripcion_router
 from app.apis.notifications_api import router as notifications_router
 from app.apis.booking_api import router as booking_router
+from app.apis.wallet_api import router as wallet_router
 
 
 
@@ -136,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
     app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
     app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
+    app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
     ##app.include_router()
 
     return app
