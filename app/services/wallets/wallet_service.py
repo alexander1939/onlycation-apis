@@ -39,10 +39,33 @@ class WalletService:
         if role.name != "teacher":
             raise HTTPException(status_code=403, detail="Solo los docentes pueden crear carteras")
         
-        # Verificar que no tenga ya una cartera
-        existing_wallet = await db.execute(select(Wallet).where(Wallet.user_id == user_id))
-        if existing_wallet.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="El docente ya tiene una cartera")
+        # Verificar si ya tiene una cartera
+        existing_wallet_result = await db.execute(select(Wallet).where(Wallet.user_id == user_id))
+        existing_wallet = existing_wallet_result.scalar_one_or_none()
+        
+        if existing_wallet:
+            # Si ya tiene cartera pero está pendiente, generar nuevo setup URL
+            if existing_wallet.stripe_bank_status == "pending" and existing_wallet.stripe_account_id:
+                try:
+                    # Crear nuevo enlace de configuración
+                    account_link = stripe.AccountLink.create(
+                        account=existing_wallet.stripe_account_id,
+                        return_url="http://localhost:5173/",  # Cambia por tu URL
+                        refresh_url="http://localhost:5173/", # Cambia por tu URL
+                        type='account_onboarding',
+                    )
+                    
+                    # Actualizar el setup URL
+                    existing_wallet.stripe_setup_url = account_link.url
+                    await db.commit()
+                    await db.refresh(existing_wallet)
+                    
+                    return existing_wallet
+                    
+                except stripe.error.StripeError as e:
+                    raise HTTPException(status_code=400, detail=f"Error al generar nuevo enlace: {str(e)}")
+            else:
+                raise HTTPException(status_code=400, detail="El docente ya tiene una cartera configurada")
         
         # Crear cuenta de Stripe Connect automáticamente
         try:
