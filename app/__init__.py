@@ -51,7 +51,7 @@ from app.scripts.databases.create_modality import create_modality
 from app.scripts.databases.create_privilege import create_privileges
 from app.scripts.databases.create_privilege_role import create_privileges_role
 from app.scripts.databases.create_price_ranges import create_prices_range
-from app.scripts.databases.create_plan import create_premium_plan
+from app.scripts.databases.create_plan import create_premium_plan, create_free_plan
 from app.scripts.databases.create_benefit import create_benefit
 from app.scripts.databases.create_price_ranges import create_prices_range
 from app.scripts.databases.create_docente import crear_docente
@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI):
     await create_admin_user()
     await create_prices_range()
     await create_premium_plan()
+    await create_free_plan()
     await create_benefit()
     await create_prices_range()
     await crear_docente()
