@@ -1,7 +1,7 @@
 # Carpeta del entorno virtual (no debe subirse)
 .venv/
 venv/
-
+uploads/
 alembic.ini
 
 # Variables de entorno (datos sensibles)

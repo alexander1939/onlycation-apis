@@ -56,10 +56,10 @@ from app.apis.auth_api import register_teacher_route
 from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
 from app.apis.profile_api import router as profile_router
-from app.apis.preference_api import router as preference_router
 from app.apis.price_api import router as price_router
 from app.apis.suscripcion_api import router as suscripcion_router
 from app.apis.notifications_api import router as notifications_router
+from app.apis.document_api import router as document_router
 
 
 
@@ -121,10 +121,10 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
-    app.include_router(preference_router, prefix="/api/preferences", tags=["Preferences"])
     app.include_router(price_router, prefix="/api/prices", tags=["Prices"])
     app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
     app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
+    app.include_router(document_router, prefix="/api/documents", tags=["Documents"])
     ##app.include_router()
 
     return app
