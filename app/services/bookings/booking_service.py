@@ -1,6 +1,5 @@
 from sqlalchemy.future import select
 from fastapi import HTTPException
-from app.models.booking.assessment import Assessment
 from app.models.booking.bookings import Booking
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.confirmation import Confirmation
@@ -11,12 +10,48 @@ from app.external.stripe_config import stripe
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
+from app.models.teachers.availability import Availability
+from app.services.notifications.notification_service import create_booking_payment_notification, create_teacher_booking_notification
 
 async def get_active_status(db: AsyncSession):
     result = await db.execute(select(Status).where(Status.name == "active"))
     return result.scalar_one_or_none()
 
 async def create_booking_payment_session(db: AsyncSession, user: User, booking_data):
+    # 1. Validar que la disponibilidad existe
+    disponibilidad_result = await db.execute(
+        select(Availability).where(Availability.id == booking_data.availability_id)
+    )
+    disponibilidades = disponibilidad_result.scalars().all()
+    if disponibilidades:
+        disponibilidad = disponibilidades[0]  # O elige la que corresponda
+    else:
+        disponibilidad = None
+
+    if not disponibilidad:
+        raise HTTPException(status_code=404, detail="Disponibilidad no encontrada")
+
+    # 2. Validar que el horario solicitado está dentro del rango del docente
+    if not (disponibilidad.start_time <= booking_data.start_time < booking_data.end_time <= disponibilidad.end_time):
+        raise HTTPException(
+            status_code=400,
+            detail="El horario solicitado no está dentro del rango de disponibilidad del docente"
+        )
+
+    # 3. Validar que no hay traslape con otra reserva ya existente
+    overlap_result = await db.execute(
+        select(Booking).where(
+            Booking.availability_id == booking_data.availability_id,
+            Booking.start_time < booking_data.end_time,
+            Booking.end_time > booking_data.start_time
+        )
+    )
+    if overlap_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="Ya existe una reserva para ese horario"
+        )
+
     price = await db.get(Price, booking_data.price_id)
     if not price:
         raise HTTPException(status_code=404, detail="Precio no encontrado")
@@ -86,8 +121,19 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
         }
 
     # Convierte los strings a datetime
-    start_time = datetime.fromisoformat(session.metadata["start_time"])
-    end_time = datetime.fromisoformat(session.metadata["end_time"])
+    start_time_raw = session.metadata["start_time"]
+    end_time_raw = session.metadata["end_time"]
+
+    def parse_datetime(val):
+        if isinstance(val, str) and val.isdigit():
+            return datetime.fromtimestamp(int(val))
+        return datetime.fromisoformat(val)
+
+    start_time = parse_datetime(start_time_raw)
+    end_time = parse_datetime(end_time_raw)
+
+    room_name = f"class-{booking.id}-{user_id}"
+    class_link = f"https://meet.jit.si/{room_name}"
 
     # Crear Booking
     booking = Booking(
@@ -95,10 +141,14 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
         availability_id=int(session.metadata["availability_id"]),
         start_time=start_time,
         end_time=end_time,
+        class_space=class_link,
         status_id=(await get_active_status(db)).id
     )
     db.add(booking)
     await db.flush()
+
+    
+
 
     # Recarga el booking con la relación availability
     booking_result = await db.execute(
@@ -125,6 +175,16 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
         payment_booking_id=payment_booking.id
     )
     db.add(confirmation)
+    await create_booking_payment_notification(db, user_id, payment_booking.id)
+    # Crear notificación para el profesor
+    await create_teacher_booking_notification(
+        db,
+        teacher_id=booking.availability.user_id,
+        booking_id=booking.id,
+        start_time=start_time,
+        end_time=end_time
+    )
+
     await db.commit()
 
     return {

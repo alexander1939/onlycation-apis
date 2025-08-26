@@ -6,7 +6,7 @@ from app.models.users.preference import Preference
 from app.models.teachers.price import Price
 from app.models.teachers.availability import Availability
 from sqlalchemy import select
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from app.models.common.stripe_price import StripePrice
 from app.external.stripe_config import stripe_config
 import stripe
@@ -166,15 +166,33 @@ async def crear_docente():
             print("El precio ya existe.")
 
         # La disponibilidad se puede repetir cada vez
-        disponibilidad = Availability(
-            user_id=docente.id,
-            preference_id=preferencia.id,
-            day_of_week=1,  # Lunes
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow() + timedelta(hours=9)
+        # Validar disponibilidad
+        disponibilidad_result = await db.execute(
+            select(Availability).where(Availability.user_id == docente.id)
         )
-        db.add(disponibilidad)
-        print("Disponibilidad creada.")
+        disponibilidades = disponibilidad_result.scalars().all()
+        if not disponibilidades:
+            manana = datetime.today() + timedelta(days=1)
+
+            disponibilidad = Availability(
+                user_id=docente.id,
+                preference_id=preferencia.id,
+                day_of_week=1,  # Lunes
+                start_time=datetime.combine(datetime.today(), time(hour=9, minute=0)),   # 09:00
+                end_time=datetime.combine(datetime.today(), time(hour=22, minute=0))    # 22:00
+            )
+            disponibilidad2 = Availability(
+                user_id=docente.id,
+                preference_id=preferencia.id,
+                day_of_week=1,  # Lunes
+                start_time=datetime.combine(manana.date(), time(hour=9, minute=0)),   # 09:00 mañana
+                end_time=datetime.combine(manana.date(), time(hour=22, minute=0))     # 22:00 mañana
+            )
+            db.add(disponibilidad)
+            db.add(disponibilidad2)
+            print("Disponibilidad creada.")
+        else:
+            print("La disponibilidad ya existe.")
 
         await db.commit()
         print("Docente de prueba creado con datos relacionados.")

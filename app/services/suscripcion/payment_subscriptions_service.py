@@ -24,7 +24,6 @@ async def create_subscription_session(db: AsyncSession, user: User, plan_id: int
     Crea una sesión de checkout de Stripe para suscripción
     """
     try:
-        # Validar si el usuario ya tiene una suscripción activa
         existing_subscription_result = await db.execute(
             select(Subscription)
             .where(
@@ -40,7 +39,6 @@ async def create_subscription_session(db: AsyncSession, user: User, plan_id: int
                 detail="Ya tienes una suscripción activa. No puedes suscribirte a otro plan hasta que expire o canceles la actual."
             )
 
-        # Buscar el plan por ID
         plan_result = await db.execute(
             select(Plan).where(Plan.id == plan_id, Plan.status.has(name="active"))
         )
@@ -49,18 +47,15 @@ async def create_subscription_session(db: AsyncSession, user: User, plan_id: int
         if not plan:
             raise HTTPException(status_code=404, detail="Plan no encontrado o inactivo")
 
-        # Verificar que el plan tiene stripe_price_id configurado
         if not plan.stripe_price_id:
             raise HTTPException(status_code=400, detail="Plan no tiene configuración de Stripe")
 
-        # Validar que el usuario tiene el rol correcto para este plan
         if user.role_id != plan.role_id:
             raise HTTPException(
                 status_code=403, 
                 detail=f"No puedes suscribirte a este plan. Este plan está destinado para usuarios con rol '{plan.role.name}' y tu rol es '{user.role.name}'"
             )
 
-        # Crear sesión de checkout de Stripe
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="subscription",
@@ -126,7 +121,6 @@ async def verify_payment_and_create_subscription(db: AsyncSession, session_id: s
                 "payment_status": session.payment_status
             }
         
-        # Obtener el usuario y el plan para validar roles
         user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
         
@@ -137,7 +131,6 @@ async def verify_payment_and_create_subscription(db: AsyncSession, session_id: s
         if not user or not plan:
             raise HTTPException(status_code=404, detail="Usuario o plan no encontrado")
         
-        # Validar que el usuario tiene el rol correcto para este plan
         if user.role_id != plan.role_id:
             raise HTTPException(
                 status_code=403, 
@@ -166,7 +159,6 @@ async def process_successful_payment(db: AsyncSession, session):
         user_id = int(session["metadata"]["user_id"])
         plan_id = int(session["metadata"]["plan_id"])
 
-        # Obtener el PaymentIntent ID desde la sesión de Stripe
         stripe_subscription_id = session.get("subscription")
         payment_intent_id = None
         if stripe_subscription_id:
@@ -176,7 +168,6 @@ async def process_successful_payment(db: AsyncSession, session):
                 invoice = stripe.Invoice.retrieve(latest_invoice_id)
                 payment_intent_id = invoice.get("payment_intent")
 
-        # Obtener el usuario y el plan para las notificaciones
         user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
         
@@ -186,17 +177,15 @@ async def process_successful_payment(db: AsyncSession, session):
         if not user or not plan:
             raise HTTPException(status_code=404, detail="Usuario o plan no encontrado")
         
-        # Obtener status activo
         active_status = await get_active_status(db)
         if not active_status:
             raise HTTPException(status_code=500, detail="Status activo no encontrado")
 
-        # Crear payment_subscription en la base de datos
         payment_subscription = PaymentSubscription(
             plan_id=plan_id,
             user_id=user_id,
             status_id=active_status.id,
-            payment_date=datetime.utcnow(),  # <-- Correcto
+            payment_date=datetime.utcnow(), 
             stripe_payment_intent_id=payment_intent_id
         )
 
@@ -205,13 +194,12 @@ async def process_successful_payment(db: AsyncSession, session):
         await db.commit()
         await db.refresh(payment_subscription)
 
-        # Crear subscription en la base de datos
         subscription = Subscription(
             user_id=user_id,
             plan_id=plan_id,
             payment_suscription_id=payment_subscription.id,
             start_date=datetime.utcnow(),
-            end_date=datetime.utcnow() + timedelta(days=30),  # Fecha tentativa
+            end_date=datetime.utcnow() + timedelta(days=30), 
             status_id=active_status.id
         )
         
@@ -219,18 +207,14 @@ async def process_successful_payment(db: AsyncSession, session):
         await db.commit()
         await db.refresh(subscription)
 
-        # Crear notificaciones automáticas
         try:
-            # Notificación de bienvenida
             await create_welcome_notification(db, user)
             
-            # Notificación específica de suscripción
             await create_subscription_notification(db, user, plan.name)
             
             print(f"✅ Notificaciones creadas para usuario {user_id}")
         except Exception as e:
             print(f"⚠️ Error creando notificaciones: {str(e)}")
-            # No fallamos la suscripción si las notificaciones fallan
 
         print(f"Suscripción creada para usuario {user_id}, plan {plan_id}")
     except Exception as e:
@@ -396,3 +380,40 @@ async def get_user_by_token(db: AsyncSession, user_id: int):
         raise e
     except Exception as e:
         await unexpected_exception()
+
+
+
+
+
+async def get_user_active_subscription(db, user_id: int):
+    result = await db.execute(
+        select(Subscription)
+        .options(joinedload(Subscription.plan), joinedload(Subscription.status))
+        .join(Status)
+        .where(
+            Subscription.user_id == user_id,
+            Status.name == "active"
+        )
+        .order_by(Subscription.start_date.desc())
+    )
+    
+    subscription = result.scalars().first()
+    
+    if not subscription:
+        raise HTTPException(status_code=404, detail="No tienes suscripción activa")
+
+    days_left = None
+    if subscription.end_date:
+        days_left = (subscription.end_date - datetime.utcnow()).days
+
+    return {
+        "subscription_id": subscription.id,
+        "plan_id": subscription.plan.id,
+        "plan_name": subscription.plan.name,
+        "plan_description": subscription.plan.description,
+        "price": subscription.plan.price,
+        "start_date": subscription.start_date,
+        "end_date": subscription.end_date,
+        "status": subscription.status.name,
+        "days_left": days_left
+    }
