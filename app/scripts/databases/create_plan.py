@@ -183,8 +183,8 @@ async def create_free_plan():
                 "description": "Tu perfil aparece en las búsquedas de estudiantes"
             },
             {
-                "name": "5% Comisión",
-                "description": "Comisión estándar del 5% por las clases que impartas"
+                "name": "60% Comisión",
+                "description": "Comisión estándar del 60% por las clases que impartas"
             },
             {
                 "name": "Soporte Básico",
