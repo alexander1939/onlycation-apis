@@ -14,6 +14,7 @@ from app.models.common.modality import Modality
 from app.models.common.educational_level import EducationalLevel
 from app.models.common.verification_code import VerificationCode
 from app.models.common.price_range import PriceRange
+from app.models.common.stripe_price import StripePrice
 
 from app.models.users.user import User
 from app.models.users.preference import Preference
@@ -22,6 +23,8 @@ from app.models.users.preference import Preference
 from app.models.teachers.document import Document
 from app.models.teachers.price import Price
 from app.models.teachers.video import Video
+from app.models.teachers.availability import Availability
+from app.models.teachers.wallet import Wallet
 
 
 from app.models.privileges.privilege import Privilege
@@ -36,6 +39,9 @@ from app.models.subscriptions.payment_subscription import PaymentSubscription
 from  app.models.notifications.notifications import Notification
 from  app.models.notifications.user_notifications import User_notification
 
+from app.models.booking.bookings import Booking
+from app.models.booking.payment_bookings import PaymentBooking
+from app.models.booking.confirmation import Confirmation
 
 from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_user_admin import create_admin_user
@@ -45,8 +51,10 @@ from app.scripts.databases.create_modality import create_modality
 from app.scripts.databases.create_privilege import create_privileges
 from app.scripts.databases.create_privilege_role import create_privileges_role
 from app.scripts.databases.create_price_ranges import create_prices_range
-from app.scripts.databases.create_plan import create_premium_plan
+from app.scripts.databases.create_plan import create_premium_plan, create_free_plan
 from app.scripts.databases.create_benefit import create_benefit
+from app.scripts.databases.create_price_ranges import create_prices_range
+from app.scripts.databases.create_docente import crear_docente
 
 from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.auths.register_service import RegisterUserRequest
@@ -60,6 +68,8 @@ from app.apis.price_api import router as price_router
 from app.apis.suscripcion_api import router as suscripcion_router
 from app.apis.notifications_api import router as notifications_router
 from app.apis.document_api import router as document_router
+from app.apis.booking_api import router as booking_router
+from app.apis.wallet_api import router as wallet_router
 
 
 
@@ -86,7 +96,10 @@ async def lifespan(app: FastAPI):
     await create_admin_user()
     await create_prices_range()
     await create_premium_plan()
+    await create_free_plan()
     await create_benefit()
+    await create_prices_range()
+    await crear_docente()
 
     yield
 
@@ -105,7 +118,8 @@ def create_app() -> FastAPI:
     )
 
     origins = [
-        "http://localhost:5173",  
+        "http://localhost:5173",
+        "http://localhost:5173/",  
     ]
 
     app.add_middleware(
@@ -125,6 +139,8 @@ def create_app() -> FastAPI:
     app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
     app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
     app.include_router(document_router, prefix="/api/documents", tags=["Documents"])
+    app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
+    app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
     ##app.include_router()
 
     return app

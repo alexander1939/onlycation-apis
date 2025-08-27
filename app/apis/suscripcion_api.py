@@ -3,9 +3,10 @@ from app.schemas.suscripcion.payment_subscriptions_schema import (
     SubscribeRequest, SubscribeResponse,
     VerifyPaymentResponse
 )
-from app.schemas.suscripcion.plan_schema import CreatePlanRequest, CreatePlanResponse, UpdatePlanRequest, UpdatePlanResponse, GetPlansResponse, GetPlanResponse
+from app.schemas.suscripcion.plan_schema import CreatePlanRequest, CreatePlanResponse, MySubscriptionResponse, UpdatePlanRequest, UpdatePlanResponse, GetPlansResponse, GetPlanResponse
 from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, CreateBenefitResponse, UpdateBenefitRequest, UpdateBenefitResponse, GetBenefitsResponse, GetBenefitResponse
 from app.services.suscripcion.payment_subscriptions_service import (
+    get_user_active_subscription,
     subscribe_user_to_plan, 
     create_subscription_session, 
     verify_payment_and_create_subscription,
@@ -205,7 +206,7 @@ async def get_benefit_route(benefit_id: int, db: AsyncSession = Depends(get_db))
     }
 
 # Endpoints para Suscripciones
-@router.post("/crear-suscripcion", response_model=SubscribeResponse)
+@router.post("/crear-suscripcion", response_model=SubscribeResponse, dependencies=[Depends(auth_required)])
 async def crear_suscripcion(
     request: SubscribeRequest,
     db: AsyncSession = Depends(get_db),
@@ -228,7 +229,7 @@ async def crear_suscripcion(
         }
     }
 
-@router.get("/verificar-pago/{session_id}", response_model=VerifyPaymentResponse)
+@router.get("/verificar-pago/{session_id}", response_model=VerifyPaymentResponse, dependencies=[Depends(auth_required)])
 async def verificar_pago(
     session_id: str,
     db: AsyncSession = Depends(get_db),
@@ -247,3 +248,18 @@ async def verificar_pago(
     } 
 
 
+@router.get("/mi-suscripcion", response_model=MySubscriptionResponse, dependencies=[Depends(auth_required)])
+async def mi_suscripcion(
+    db: AsyncSession = Depends(get_db),
+    user_data: dict = Depends(auth_required)
+):
+    """
+    Obtiene la información de la suscripción activa del usuario
+    """
+    subscription_data = await get_user_active_subscription(db, user_data["user_id"])
+    
+    return {
+        "success": True,
+        "message": "Suscripción obtenida correctamente",
+        "data": subscription_data
+    }
