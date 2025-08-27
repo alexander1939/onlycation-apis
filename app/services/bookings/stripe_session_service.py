@@ -145,6 +145,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         "mode": "payment",
         "success_url": "http://localhost:5173/?session_id={CHECKOUT_SESSION_ID}",
         "cancel_url": "http://localhost:5173/",
+        "customer_email": user.email,  # Email del estudiante pre-llenado automáticamente
         "metadata": {
             "user_id": str(user.id),
             "price_id": str(price.id),
@@ -153,6 +154,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             "end_time": booking_data.end_time,
             "total_hours": str(total_hours),
             "teacher_id": str(teacher_id),
+            "teacher_email": disponibilidad.user.email,  # Email del docente
             "commission_rate": str(commission_rate),
             "commission_amount": str(commission_amount),
             "teacher_amount": str(teacher_amount),

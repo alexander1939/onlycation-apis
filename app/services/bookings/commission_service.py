@@ -2,44 +2,86 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.subscriptions.subscription import Subscription
 from app.models.subscriptions.plan import Plan
+from app.models.subscriptions.benefit import Benefit
 from app.models.common.status import Status
 from app.models.teachers.wallet import Wallet
 from fastapi import HTTPException
+import re
 
 async def get_teacher_commission_rate(db: AsyncSession, teacher_id: int):
-    """Obtiene el porcentaje de comisión según el plan del docente"""
+    """Obtiene el porcentaje de comisión desde la base de datos usando plan_benefit"""
     print(f"🔍 DEBUG: Buscando comisión para teacher_id: {teacher_id}")
     
-    # Buscar suscripción activa del docente con join explícito
+    # Buscar TODAS las suscripciones activas del docente con sus beneficios
     subscription_result = await db.execute(
-        select(Subscription, Plan)
+        select(Subscription, Plan, Benefit)
         .join(Plan, Subscription.plan_id == Plan.id)
         .join(Status, Subscription.status_id == Status.id)
+        .join(Plan.benefits)  # Join con los beneficios del plan
         .where(
             Subscription.user_id == teacher_id,
-            Status.name == "active"
+            Status.name == "active",
+            Benefit.name.like("%Comisión%")  # Solo beneficios de comisión
         )
         .order_by(Subscription.start_date.desc())
     )
-    result = subscription_result.first()
+    all_subscriptions = subscription_result.all()
     
-    if not result:
-        # Si no tiene suscripción, usar plan gratuito por defecto
-        print(f"⚠️ DEBUG: No se encontró suscripción activa para teacher_id {teacher_id}, usando plan gratuito (60%)")
-        return 60.00
+    if not all_subscriptions:
+        # Si no tiene suscripción, buscar el plan gratuito por defecto
+        print(f"⚠️ DEBUG: No se encontró suscripción activa para teacher_id {teacher_id}")
+        
+        # Buscar beneficio de comisión del plan gratuito
+        default_result = await db.execute(
+            select(Plan, Benefit)
+            .join(Plan.benefits)
+            .where(
+                Plan.name == "Plan Gratuito",
+                Benefit.name.like("%Comisión%")
+            )
+        )
+        default_plan_benefit = default_result.first()
+        
+        if default_plan_benefit:
+            _, default_benefit = default_plan_benefit
+            commission_rate = extract_commission_from_benefit(default_benefit.name)
+            print(f"⚠️ DEBUG: Usando plan gratuito por defecto - Comisión: {commission_rate}%")
+            return commission_rate
+        else:
+            print(f"❌ DEBUG: No se encontró beneficio de comisión para plan gratuito, usando 60% por defecto")
+            return 60.00
     
-    subscription, plan = result
-    print(f"📋 DEBUG: Suscripción encontrada - Plan: {plan.name}, ID: {plan.id}")
+    # Mostrar todas las suscripciones encontradas
+    print(f"📋 DEBUG: Se encontraron {len(all_subscriptions)} suscripciones activas con beneficios de comisión:")
     
-    # Plan gratuito = 60% comisión, Plan premium = 0% comisión
-    if plan.name == "Plan Gratuito":
-        print(f"💰 DEBUG: Plan Gratuito detectado - Comisión: 60%")
-        return 60.00
-    elif plan.name == "Plan Premium":
-        print(f"⭐ DEBUG: Plan Premium detectado - Comisión: 0%")
+    best_commission_rate = None
+    best_plan_name = None
+    
+    for i, (subscription, plan, benefit) in enumerate(all_subscriptions):
+        commission_rate = extract_commission_from_benefit(benefit.name)
+        print(f"   {i+1}. Plan: {plan.name}, Beneficio: {benefit.name}, Comisión: {commission_rate}%")
+        
+        # Seleccionar la menor comisión (mejor para el docente)
+        if best_commission_rate is None or commission_rate < best_commission_rate:
+            best_commission_rate = commission_rate
+            best_plan_name = plan.name
+    
+    print(f"🏆 DEBUG: Plan seleccionado: {best_plan_name}")
+    print(f"💰 DEBUG: Comisión aplicada: {best_commission_rate}%")
+    
+    return best_commission_rate
+
+def extract_commission_from_benefit(benefit_name: str) -> float:
+    """Extrae el porcentaje de comisión del nombre del beneficio"""
+    # Buscar patrones como "60% Comisión" o "0% Comisión"
+    match = re.search(r'(\d+(?:\.\d+)?)%', benefit_name)
+    if match:
+        return float(match.group(1))
+    
+    # Si no encuentra número, asumir por defecto
+    if "0%" in benefit_name or "Sin comisión" in benefit_name.lower():
         return 0.00
     else:
-        print(f"❓ DEBUG: Plan desconocido '{plan.name}' - Usando comisión por defecto: 60%")
         return 60.00  # Por defecto
 
 async def get_teacher_wallet(db: AsyncSession, teacher_id: int):
