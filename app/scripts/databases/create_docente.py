@@ -5,6 +5,10 @@ from app.models.users.profile import Profile
 from app.models.users.preference import Preference
 from app.models.teachers.price import Price
 from app.models.teachers.availability import Availability
+from app.models.teachers.wallet import Wallet
+from app.models.subscriptions.plan import Plan
+from app.models.subscriptions.payment_subscription import PaymentSubscription
+from app.models.subscriptions.subscription import Subscription
 from sqlalchemy import select
 from datetime import datetime, timedelta, time
 from app.models.common.stripe_price import StripePrice
@@ -194,5 +198,61 @@ async def crear_docente():
         else:
             print("La disponibilidad ya existe.")
 
+        # Crear wallet con cuenta Stripe activa
+        wallet_result = await db.execute(
+            select(Wallet).where(Wallet.user_id == docente.id)
+        )
+        wallet = wallet_result.scalar_one_or_none()
+        if not wallet:
+            wallet = Wallet(
+                user_id=docente.id,
+                stripe_account_id="acct_1RzrVLRvLAM1ndJe",  # Cuenta Stripe activa de prueba
+                stripe_bank_status="active",  # Estado activo para pruebas
+                stripe_setup_url=None  # No necesita setup URL porque ya está activo
+            )
+            db.add(wallet)
+            print("Wallet creado con cuenta Stripe activa.")
+        else:
+            print("El wallet ya existe.")
+
+        # Asignar plan gratuito por defecto
+        subscription_result = await db.execute(
+            select(Subscription).where(Subscription.user_id == docente.id)
+        )
+        existing_subscription = subscription_result.scalar_one_or_none()
+        if not existing_subscription:
+            # Buscar el plan gratuito
+            free_plan_result = await db.execute(
+                select(Plan).where(Plan.name == "Plan Gratuito")
+            )
+            free_plan = free_plan_result.scalar_one_or_none()
+            
+            if free_plan:
+                # Crear PaymentSubscription (validación del pago)
+                payment_subscription = PaymentSubscription(
+                    user_id=docente.id,
+                    plan_id=free_plan.id,
+                    status_id=1,  # Asume que 1 es status activo
+                    stripe_payment_intent_id=None  # No hay Stripe para plan gratuito
+                )
+                db.add(payment_subscription)
+                await db.flush()
+                
+                # Crear Subscription (validación de fechas y estado)
+                subscription = Subscription(
+                    user_id=docente.id,
+                    plan_id=free_plan.id,
+                    payment_suscription_id=payment_subscription.id,
+                    start_date=datetime.utcnow(),
+                    end_date=None,  # Plan gratuito ilimitado
+                    status_id=1  # Activo
+                )
+                db.add(subscription)
+                print("Plan gratuito asignado al docente de prueba.")
+            else:
+                print("Plan gratuito no encontrado. Ejecuta create_plan.py primero.")
+        else:
+            print("El docente ya tiene una suscripción.")
+
         await db.commit()
-        print("Docente de prueba creado con datos relacionados.")
+        print("Docente de prueba creado con datos relacionados, wallet activo y plan gratuito.")

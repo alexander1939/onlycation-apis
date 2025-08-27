@@ -3,11 +3,9 @@ from app.schemas.bookings.booking_shema import (
     BookingRequest, BookingPaymentResponse,
     VerifyBookingPaymentResponse
 )
-from app.services.bookings.booking_service import (
-    create_booking_payment_session,
-    verify_booking_payment_and_create_records,
-    get_user_by_token  # importa la función
-)
+from app.services.bookings.booking_service import get_user_by_token
+from app.services.bookings.stripe_session_service import create_booking_payment_session
+from app.services.bookings.payment_verification_service import verify_booking_payment_and_create_records
 from app.apis.deps import auth_required, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
