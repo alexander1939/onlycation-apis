@@ -15,7 +15,8 @@ router = APIRouter()
 @router.post("/teacher/", response_model=ConfirmationCreateResponse, dependencies=[Depends(auth_required)])
 async def confirm_teacher(
     confirmation: bool = Form(...),
-    evidence_file: UploadFile = File(None),
+    description_teacher: str = Form(...),   # 🔹 Nuevo campo obligatorio
+    evidence_file: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
@@ -28,7 +29,8 @@ async def confirm_teacher(
         confirmation_value=confirmation,
         student_id=0,       # si quieres puedes pasar dinámico desde el request
         payment_booking_id=1,  # idem
-        evidence_file=evidence_file
+        evidence_file=evidence_file,
+        description_teacher=description_teacher
     )
 
     return ConfirmationCreateResponse(
@@ -40,6 +42,7 @@ async def confirm_teacher(
             student_id=confirmation_obj.student_id,
             payment_booking_id=confirmation_obj.payment_booking_id,
             confirmation_date_teacher=confirmation_obj.confirmation_date_teacher,
-            evidence_teacher=confirmation_obj.evidence_teacher
+            evidence_teacher=confirmation_obj.evidence_teacher,
+            description_teacher=confirmation_obj.description_teacher
         )
     )

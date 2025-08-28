@@ -36,7 +36,8 @@ async def create_confirmation_by_teacher(
     confirmation_value: bool,
     student_id: int,
     payment_booking_id: int,
-    evidence_file: UploadFile = None
+    evidence_file: UploadFile,  # obligatorio
+    description_teacher: str
 ) -> Confirmation:
     teacher_id = await get_teacher_id_from_token(token)
     await _validate_teacher_exists(db, teacher_id)
@@ -47,22 +48,27 @@ async def create_confirmation_by_teacher(
             Confirmation.payment_booking_id == payment_booking_id
         )
     )
-    
     existing_confirmation = result.scalars().first()
-
     if existing_confirmation:
         raise HTTPException(
             status_code=400,
             detail="Ya existe una confirmación para este paymentbooking."
         )
 
-    # 🔹 Ahora la evidencia siempre es obligatoria (True o False)
-    if not evidence_file:
+    # Validar que realmente se subió un archivo
+    if not evidence_file or not evidence_file.filename:
         raise HTTPException(
             status_code=400,
-            detail="Es obligatorio subir la evidencia"
+            detail="Es obligatorio subir una evidencia (imagen)"
         )
-    
+
+    # Validar descripción
+    if not description_teacher.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Es obligatorio la descripción"
+        )
+
     # Guardar archivo con nombre único
     ext = os.path.splitext(evidence_file.filename)[1] or ".jpg"
     unique_name = f"{uuid.uuid4().hex}{ext}"
@@ -71,13 +77,14 @@ async def create_confirmation_by_teacher(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(evidence_file.file, buffer)
 
-    # Crear confirmación con evidencia
+    # Crear confirmación con evidencia obligatoria
     confirmation = Confirmation(
         teacher_id=teacher_id,
         student_id=student_id,
         payment_booking_id=payment_booking_id,
         confirmation_date_teacher=confirmation_value,
-        evidence_teacher=unique_name
+        evidence_teacher=unique_name,
+        description_teacher=description_teacher
     )
 
     db.add(confirmation)

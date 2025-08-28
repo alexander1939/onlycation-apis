@@ -5,6 +5,7 @@ class StudentConfirmationCreateRequest(BaseModel):
     
     #payment_booking_id: int 
     confirmation: bool  # True o False
+    description_student: str  # 🔹 Texto obligatorio
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -14,6 +15,7 @@ class StudentConfirmationData(BaseModel):
     student_id: int
     payment_booking_id: int
     confirmation_date_student: Optional[bool] = None
+    description_student: Optional[str] = None   # 🔹 Lo incluimos en la respuesta
 
     model_config = ConfigDict(from_attributes=True)
 

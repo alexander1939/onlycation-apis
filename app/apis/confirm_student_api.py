@@ -20,8 +20,9 @@ router = APIRouter()
             response_model=StudentConfirmationCreateResponse,
             dependencies=[Depends(auth_required)])
 async def confirm_student(
-    confirmation: bool = Form(...),                
-    evidence_file: UploadFile = File(None),
+    confirmation: bool = Form(...),          
+    description_student: str = Form(...),   # 🔹 Nuevo campo obligatorio      
+    evidence_file: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
@@ -32,7 +33,8 @@ async def confirm_student(
         token=token,
         confirmation_value=confirmation,
         payment_booking_id=1,   
-        evidence_file=evidence_file
+        evidence_file=evidence_file,
+        description_student=description_student   # 🔹 Se pasa al service
     )
 
     return StudentConfirmationCreateResponse(
@@ -43,6 +45,7 @@ async def confirm_student(
             teacher_id=confirmation_obj.teacher_id,
             student_id=confirmation_obj.student_id,
             payment_booking_id=confirmation_obj.payment_booking_id,
-            confirmation_date_student=confirmation_obj.confirmation_date_student
+            confirmation_date_student=confirmation_obj.confirmation_date_student,
+            description_student=confirmation_obj.description_student
         )
     )
