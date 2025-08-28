@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, Float, DateTime
+from sqlalchemy import Column, Integer, ForeignKey, Float, DateTime,String
 from sqlalchemy.orm import relationship
 from app.cores.db import Base
 from sqlalchemy.sql import func
@@ -12,6 +12,14 @@ class Price(Base):
     price_range_id = Column(Integer, ForeignKey("price_ranges.id"), nullable=False)
     selected_prices = Column(Float, nullable=False)
     extra_hour_price = Column(Float, nullable=False)
+
+    selected_prices = Column(Float, nullable=False)
+    stripe_product_id = Column(String(100), nullable=True)
+    stripe_price_id = Column(String(100), nullable=True)
+
+    extra_hour_price = Column(Float, nullable=False)
+    stripe_extra_product_id = Column(String(100), nullable=True)
+    stripe_extra_price_id = Column(String(100), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

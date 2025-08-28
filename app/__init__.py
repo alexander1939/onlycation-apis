@@ -14,6 +14,7 @@ from app.models.common.modality import Modality
 from app.models.common.educational_level import EducationalLevel
 from app.models.common.verification_code import VerificationCode
 from app.models.common.price_range import PriceRange
+from app.models.common.stripe_price import StripePrice
 
 from app.models.users.user import User
 from app.models.users.preference import Preference
@@ -22,6 +23,8 @@ from app.models.users.preference import Preference
 from app.models.teachers.document import Document
 from app.models.teachers.price import Price
 from app.models.teachers.video import Video
+from app.models.teachers.availability import Availability
+from app.models.teachers.wallet import Wallet
 
 
 from app.models.privileges.privilege import Privilege
@@ -33,6 +36,13 @@ from app.models.subscriptions.plan import Plan
 from app.models.subscriptions.subscription import Subscription
 from app.models.subscriptions.payment_subscription import PaymentSubscription
 
+from  app.models.notifications.notifications import Notification
+from  app.models.notifications.user_notifications import User_notification
+
+from app.models.booking.bookings import Booking
+from app.models.booking.payment_bookings import PaymentBooking
+from app.models.booking.confirmation import Confirmation
+
 from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_user_admin import create_admin_user
 from app.scripts.databases.create_role import create_role
@@ -40,6 +50,11 @@ from app.scripts.databases.create_educational_level import create_educational_le
 from app.scripts.databases.create_modality import create_modality
 from app.scripts.databases.create_privilege import create_privileges
 from app.scripts.databases.create_privilege_role import create_privileges_role
+from app.scripts.databases.create_price_ranges import create_prices_range
+from app.scripts.databases.create_plan import create_premium_plan, create_free_plan
+from app.scripts.databases.create_benefit import create_benefit
+from app.scripts.databases.create_price_ranges import create_prices_range
+from app.scripts.databases.create_docente import crear_docente
 
 from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.auths.register_service import RegisterUserRequest
@@ -49,6 +64,17 @@ from app.apis.auth_api import register_teacher_route
 from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
 from app.apis.profile_api import router as profile_router
+from app.apis.preference_api import router as preference_router
+from app.apis.price_api import router as price_router
+from app.apis.suscripcion_api import router as suscripcion_router
+from app.apis.notifications_api import router as notifications_router
+from app.apis.booking_api import router as booking_router
+from app.apis.wallet_api import router as wallet_router
+
+
+
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.apis.videos_api import router as videos_router
 
 
@@ -71,6 +97,12 @@ async def lifespan(app: FastAPI):
     await create_privileges()
     await create_privileges_role()
     await create_admin_user()
+    await create_prices_range()
+    await create_premium_plan()
+    await create_free_plan()
+    await create_benefit()
+    await create_prices_range()
+    await crear_docente()
 
     yield
 
@@ -80,16 +112,32 @@ async def lifespan(app: FastAPI):
     - Aplica la función `lifespan` para la inicialización.
     - Carga las rutas necesarias (por ahora, solo las de autenticación).
 """
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="onlyCation", 
         lifespan=lifespan  
     )
+
+    origins = [
+        "http://localhost:5173",
+        "http://localhost:5173/",  
+    ]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
     # Agrega el router de autenticación con un prefijo y una etiqueta
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
-    app.include_router(videos_router, prefix="/api/videos", tags=["Videos"]) 
     ##app.include_router()
 
     return app

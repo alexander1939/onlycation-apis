@@ -32,14 +32,39 @@ async def create_privileges_role():
             return
 
         if not privileges:
-            actions = ["create", "edit", "desactivate", "read"]
+            # Definir todos los privilegios necesarios
+            privileges_data = [
+                # Privilegios para privilege
+                {"name": "privilege", "action": "create", "description": "Allows creating new Privileges"},
+                {"name": "privilege", "action": "update", "description": "Allows editing existing Privileges"},
+                {"name": "privilege", "action": "desactivate", "description": "Allows deactivating Privileges"},
+                {"name": "privilege", "action": "read", "description": "Allows reading existing Privileges"},
+                
+                # Privilegios para plan
+                {"name": "plan", "action": "create", "description": "Allows creating new Plans"},
+                {"name": "plan", "action": "update", "description": "Allows editing existing Plans"},
+                {"name": "plan", "action": "desactivate", "description": "Allows deactivating Plans"},
+                {"name": "plan", "action": "read", "description": "Allows reading existing Plans"},
+                
+                # Privilegios para benefit
+                {"name": "benefit", "action": "create", "description": "Allows creating new Benefits"},
+                {"name": "benefit", "action": "update", "description": "Allows editing existing Benefits"},
+                {"name": "benefit", "action": "desactivate", "description": "Allows deactivating Benefits"},
+                {"name": "benefit", "action": "read", "description": "Allows reading existing Benefits"},
+                
+                # Privilegios para plan_benefit
+                {"name": "plan_benefit", "action": "create", "description": "Allows creating new PlanBenefits"},
+                {"name": "plan_benefit", "action": "update", "description": "Allows editing existing PlanBenefits"},
+                {"name": "plan_benefit", "action": "desactivate", "description": "Allows deactivating PlanBenefits"},
+                {"name": "plan_benefit", "action": "read", "description": "Allows reading existing PlanBenefits"}
+            ]
+            
             privileges_list = []
-
-            for action in actions:
+            for priv_data in privileges_data:
                 privilege = Privilege(
-                    name="privilege",
-                    action=action,
-                    description=f"Allows {action} privileges",
+                    name=priv_data["name"],
+                    action=priv_data["action"],
+                    description=priv_data["description"],
                     status_id=active_status.id
                 )
                 privileges_list.append(privilege)
