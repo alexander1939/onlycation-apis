@@ -30,11 +30,10 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
             "payment_status": session.payment_status
         }
 
-    # Validar que no se haya procesado antes
+    # Validar que no se haya procesado antes usando el payment_intent_id específico
     existing_payment = await db.execute(
         select(PaymentBooking).where(
-            PaymentBooking.user_id == user_id,
-            PaymentBooking.created_at >= datetime.fromtimestamp(session.created)
+            PaymentBooking.stripe_payment_intent_id == payment_intent_id
         )
     )
     if existing_payment.scalar_one_or_none():
