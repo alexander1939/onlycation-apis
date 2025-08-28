@@ -45,7 +45,9 @@ async def create_confirmation_by_student(
     await _validate_student_exists(db, student_id)
 
     result = await db.execute(
-        select(Confirmation).where(Confirmation.payment_booking_id == payment_booking_id)
+        select(Confirmation).where(
+            Confirmation.payment_booking_id == payment_booking_id
+        )
     )
     confirmation = result.scalars().first()
     if not confirmation:
@@ -68,30 +70,29 @@ async def create_confirmation_by_student(
             detail="Este PaymentBooking ya tiene un estudiante diferente asignado."
         )
 
-    # 🔹 Si el estudiante rechaza, debe subir evidencia
-    if confirmation_value is False:
-        if not evidence_file:
-            raise HTTPException(
-                status_code=400,
-                detail="Debes subir una evidencia si rechazas la confirmación."
-            )
+    # 🔹 Ahora la evidencia siempre es obligatoria (True o False)
+    if not evidence_file:
+        raise HTTPException(
+            status_code=400,
+            detail="Es obligatorio subir la evidencia"
+        )
 
-        # Bloquear si ya existe evidencia guardada
-        if confirmation.evidence_student:
-            raise HTTPException(
-                status_code=400,
-                detail="Ya existe una evidencia registrada para esta confirmación."
-            )
+    # 🔹 Bloquear si ya existe evidencia guardada
+    if confirmation.evidence_student:
+        raise HTTPException(
+            status_code=400,
+            detail="Ya existe una evidencia registrada para esta confirmación."
+        )
 
-        # Guardar archivo con nombre único
-        ext = os.path.splitext(evidence_file.filename)[1] or ".jpg"
-        unique_name = f"{uuid.uuid4().hex}{ext}"
-        file_path = os.path.join(UPLOAD_DIR_STUDENT, unique_name)
+    # 🔹 Guardar archivo
+    ext = os.path.splitext(evidence_file.filename)[1] or ".jpg"
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(UPLOAD_DIR_STUDENT, unique_name)
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(evidence_file.file, buffer)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(evidence_file.file, buffer)
 
-        confirmation.evidence_student = unique_name
+    confirmation.evidence_student = unique_name
 
     # 🔹 Guardar confirmación
     confirmation.student_id = student_id

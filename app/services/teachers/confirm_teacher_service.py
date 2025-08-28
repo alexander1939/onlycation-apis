@@ -55,28 +55,30 @@ async def create_confirmation_by_teacher(
             status_code=400,
             detail="Ya existe una confirmación para este paymentbooking."
         )
+
+    # 🔹 Ahora la evidencia siempre es obligatoria (True o False)
+    if not evidence_file:
+        raise HTTPException(
+            status_code=400,
+            detail="Es obligatorio subir la evidencia"
+        )
+    
+    # Guardar archivo con nombre único
+    ext = os.path.splitext(evidence_file.filename)[1] or ".jpg"
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(UPLOAD_DIR_TEACHER, unique_name)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(evidence_file.file, buffer)
+
+    # Crear confirmación con evidencia
     confirmation = Confirmation(
         teacher_id=teacher_id,
         student_id=student_id,
         payment_booking_id=payment_booking_id,
-        confirmation_date_teacher=confirmation_value
+        confirmation_date_teacher=confirmation_value,
+        evidence_teacher=unique_name
     )
-
-    if confirmation_value is False:
-        if not evidence_file:
-            raise HTTPException(
-                status_code=400,
-                detail="Debes subir una evidencia si rechazas la confirmación."
-            )
-        
-        # Guardar archivo con nombre único
-        ext = os.path.splitext(evidence_file.filename)[1] or ".jpg"
-        unique_name = f"{uuid.uuid4().hex}{ext}"
-        file_path = os.path.join(UPLOAD_DIR_TEACHER, unique_name)
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(evidence_file.file, buffer)
-
-        confirmation.evidence_teacher = unique_name
 
     db.add(confirmation)
     await db.commit()

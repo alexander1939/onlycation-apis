@@ -27,13 +27,6 @@ async def confirm_student(
 ):
     token = credentials.credentials
 
-    # 🔹 Validación: si confirmation es False, debe venir archivo
-    if not confirmation and evidence_file is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Es necesario subir la evidencia"
-        )
-
     confirmation_obj = await create_confirmation_by_student(
         db=db,
         token=token,
