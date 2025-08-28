@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     admin_last_name: str
     admin_role: str
 
+    # External APIs
+    YOUTUBE_API_KEY: str | None = None
+
     
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
