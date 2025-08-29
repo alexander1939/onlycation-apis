@@ -24,11 +24,7 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
     if session.metadata.get("user_id") != str(user_id):
         raise HTTPException(status_code=403, detail="No tienes permisos para verificar esta sesión")
     if session.payment_status != "paid":
-        return {
-            "success": False,
-            "message": "Pago no completado",
-            "payment_status": session.payment_status
-        }
+        raise HTTPException(status_code=400, detail="Pago no completado")
 
     # Validar que no se haya procesado antes usando el payment_intent_id específico
     existing_payment = await db.execute(
@@ -37,11 +33,7 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
         )
     )
     if existing_payment.scalar_one_or_none():
-        return {
-            "success": True,
-            "message": "Pago ya fue procesado anteriormente",
-            "payment_status": session.payment_status
-        }
+        raise HTTPException(status_code=409, detail="Pago ya fue procesado anteriormente")
 
     # Convierte los strings a datetime
     start_time_raw = session.metadata["start_time"]
@@ -128,12 +120,8 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
     await db.commit()
 
     return {
-        "success": True,
-        "message": "Pago verificado y reserva creada",
-        "payment_status": session.payment_status,
-        "data": {
-            "booking_id": booking.id,
-            "payment_booking_id": payment_booking.id,
-            "confirmation_id": confirmation.id
-        }
+        "booking_id": booking.id,
+        "payment_booking_id": payment_booking.id,
+        "confirmation_id": confirmation.id,
+        "payment_status": session.payment_status
     }
