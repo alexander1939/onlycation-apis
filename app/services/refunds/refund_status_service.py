@@ -22,7 +22,7 @@ async def update_payment_booking_refund_status(
     try:
         # Actualizar PaymentBooking
         update_data = {
-            "status_id": 4,  # Asumiendo 4 = refunded
+            "status_id": 3,  # Asumiendo 4 = refunded
             "updated_at": datetime.utcnow()
         }
         
@@ -53,10 +53,19 @@ async def update_booking_status_after_refund(
     Actualiza el estado del Booking después de un refund
     """
     try:
+        # Buscar el status 'cancelled' en la base de datos
+        from app.models.common.status import Status
+        status_result = await db.execute(select(Status).where(Status.name == "cancelled"))
+        cancelled_status = status_result.scalar_one_or_none()
+        
+        if not cancelled_status:
+            logger.error("❌ Status 'cancelled' no encontrado en la base de datos")
+            return False
+            
         query = update(Booking).where(
             Booking.id == booking_id
         ).values(
-            status_id=5,  # Asumiendo 5 = cancelled/refunded
+            status_id=cancelled_status.id,  # Usar el ID correcto del status cancelled
             updated_at=datetime.utcnow()
         )
         

@@ -40,6 +40,14 @@ async def reschedule_booking(
         if not booking:
             raise HTTPException(status_code=404, detail="Reserva no encontrada o no pertenece al estudiante")
         
+        # Validar que la reserva no esté cancelada
+        from app.models.common.status import Status
+        cancelled_status_result = await db.execute(select(Status).where(Status.name == "cancelled"))
+        cancelled_status = cancelled_status_result.scalar_one_or_none()
+        
+        if cancelled_status and booking.status_id == cancelled_status.id:
+            raise HTTPException(status_code=400, detail="No puedes reagendar una reserva que ya está cancelada")
+        
         # Validar que falten al menos 30 minutos para la clase actual
         current_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)  # Mexico time
         minutes_until_class = (booking.start_time - current_time).total_seconds() / 60
@@ -73,11 +81,18 @@ async def reschedule_booking(
             raise HTTPException(status_code=400, detail="El nuevo horario no está dentro de la disponibilidad del docente")
         
         # Verificar que no haya conflictos con otras reservas en el nuevo horario
+        # Obtener el ID del status 'cancelled'
+        from app.models.common.status import Status
+        cancelled_status_result = await db.execute(select(Status).where(Status.name == "cancelled"))
+        cancelled_status = cancelled_status_result.scalar_one_or_none()
+        cancelled_status_id = cancelled_status.id if cancelled_status else None
+        
         conflict_query = select(Booking).where(
             Booking.availability_id == new_availability_id,
             Booking.id != booking_id,  # Excluir la reserva actual
             Booking.start_time < new_end_time,
-            Booking.end_time > new_start_time
+            Booking.end_time > new_start_time,
+            Booking.status_id != cancelled_status_id if cancelled_status_id else True
         )
         
         conflict_result = await db.execute(conflict_query)
