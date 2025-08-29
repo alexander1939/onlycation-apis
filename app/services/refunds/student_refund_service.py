@@ -66,8 +66,11 @@ async def validate_student_refund_request(
                 "reason": "Este booking ya fue reembolsado",
                 "confirmation_id": confirmation_id
             }
-            
-        current_time = datetime.utcnow()
+        
+        # Calcular tiempos y condiciones - usar timezone México (UTC-6)
+        from datetime import timezone, timedelta
+        mexico_tz = timezone(timedelta(hours=-6))
+        current_time = datetime.now(mexico_tz).replace(tzinfo=None)
         
         # REGLA 1: 30 minutos antes de la clase
         minutes_until_class = (booking.start_time - current_time).total_seconds() / 60
@@ -93,8 +96,8 @@ async def validate_student_refund_request(
         print(f"   - Puede refund después: {can_refund_after_class}")
         print(f"   - Docente confirmó: {confirmation.confirmation_date_teacher}")
         
-        # Validar si docente ya confirmó
-        if confirmation.confirmation_date_teacher == True:
+        # Validar si docente ya confirmó (solo bloquear si confirmó explícitamente)
+        if confirmation.confirmation_date_teacher is True:
             return {
                 "eligible": False,
                 "reason": "El docente ya confirmó que dio la clase",
@@ -106,12 +109,20 @@ async def validate_student_refund_request(
         if class_in_progress:
             return {
                 "eligible": False,
-                "reason": "No puedes solicitar refund durante la clase. Espera 4 horas después de que termine.",
+                "reason": "No puedes solicitar refund durante la clase.",
                 "confirmation_id": confirmation_id
             }
         
-        # CASO 1: Refund antes de la clase (30 minutos antes)
-        if can_refund_before_class:
+        # BLOQUEAR: Si la clase ya terminó pero no han pasado 4 horas
+        if class_ended and hours_since_class_ended < 4:
+            return {
+                "eligible": False,
+                "reason": f"Debes esperar 4 horas después de que termine la clase para solicitar refund (faltan {4 - hours_since_class_ended:.1f} horas)",
+                "confirmation_id": confirmation_id
+            }
+        
+        # VALIDACIÓN SIMPLE: Solo permitir refund si faltan MÁS de 30 minutos
+        if minutes_until_class > 30:
             return {
                 "eligible": True,
                 "reason": f"Puedes cancelar hasta 30 minutos antes de la clase (faltan {int(minutes_until_class)} minutos)",
@@ -135,19 +146,60 @@ async def validate_student_refund_request(
                 "teacher_name": f"{confirmation.teacher.first_name} {confirmation.teacher.last_name}"
             }
         
-        # Casos no elegibles
-        if class_ended and hours_since_class_ended < 4:
-            return {
-                "eligible": False,
-                "reason": f"El docente tiene 4 horas para confirmar la clase (faltan {4 - hours_since_class_ended:.1f} horas)",
-                "confirmation_id": confirmation_id
-            }
+        
+        # BLOQUEAR: Si faltan 30 minutos o menos antes de la clase
         elif minutes_until_class <= 30 and minutes_until_class > 0:
             return {
                 "eligible": False,
-                "reason": f"Muy cerca de la clase para cancelar (faltan {int(minutes_until_class)} minutos, mínimo 30)",
+                "reason": f"No puedes cancelar - faltan solo {int(minutes_until_class)} minutos (mínimo 30 minutos)",
                 "confirmation_id": confirmation_id
             }
+        
+        # BLOQUEAR: Si la clase ya terminó y el estudiante no ha confirmado su asistencia
+        elif class_ended and confirmation.confirmation_date_student is None:
+            if hours_since_class_ended < 4:
+                return {
+                    "eligible": False,
+                    "reason": "Debes confirmar tu asistencia dentro de las primeras 4 horas después de la clase para poder solicitar un refund",
+                    "confirmation_id": confirmation_id
+                }
+            else:
+                return {
+                    "eligible": False,
+                    "reason": "Ya no puedes solicitar refund - el plazo para confirmar tu asistencia (4 horas) ha expirado",
+                    "confirmation_id": confirmation_id
+                }
+        
+        # BLOQUEAR: Si el estudiante confirmó que NO asistió
+        elif (class_ended and confirmation.confirmation_date_student is False):
+            return {
+                "eligible": False,
+                "reason": "No puedes solicitar refund porque confirmaste que NO asististe a la clase",
+                "confirmation_id": confirmation_id
+            }
+        
+        # CASO ÚNICO: Estudiante SÍ asistió = REFUND disponible (independiente del docente)
+        elif (class_ended and confirmation.confirmation_date_student is True):
+            # Verificar ventana de 24 horas para solicitar refund después de confirmar
+            if hours_since_class_ended <= 24:
+                return {
+                    "eligible": True,
+                    "reason": "Confirmaste que asististe - Refund disponible por falta del docente",
+                    "confirmation_id": confirmation_id,
+                    "refund_amount": payment_booking.total_amount / 100,
+                    "refund_type": "teacher_no_show",
+                    "class_start_time": booking.start_time.isoformat(),
+                    "class_end_time": booking.end_time.isoformat(),
+                    "teacher_name": f"{confirmation.teacher.first_name} {confirmation.teacher.last_name}"
+                }
+            else:
+                return {
+                    "eligible": False,
+                    "reason": "Ya no puedes solicitar refund - el plazo de 24 horas después de confirmar tu asistencia ha expirado",
+                    "confirmation_id": confirmation_id
+                }
+        
+        # CASO 6: Cualquier otro caso no elegible
         else:
             return {
                 "eligible": False,
@@ -411,15 +463,16 @@ async def get_student_refundable_bookings(db: AsyncSession, student_id: int) -> 
         for confirmation in confirmations:
             booking = confirmation.payment_booking.booking
             
-            # REGLA 1: 30 minutos antes de la clase
+            # Calcular tiempos y condiciones
             minutes_until_class = (booking.start_time - current_time).total_seconds() / 60
             can_refund_before_class = minutes_until_class > 30
             
-            # REGLA 2: Después de la clase (solo 4 horas para que docente confirme)
-            hours_since_class_ended = (current_time - booking.end_time).total_seconds() / 3600
-            class_ended = booking.end_time < current_time
+            class_ended = current_time > booking.end_time
+            class_in_progress = current_time >= booking.start_time and current_time <= booking.end_time
+            hours_since_class_ended = (current_time - booking.end_time).total_seconds() / 3600 if class_ended else 0
+            
             teacher_confirmation_window_expired = class_ended and hours_since_class_ended >= 4
-            teacher_didnt_confirm = confirmation.confirmation_date_teacher != True
+            teacher_didnt_confirm = confirmation.confirmation_date_teacher is not True  # null o False
             can_refund_after_class = teacher_confirmation_window_expired and teacher_didnt_confirm
             
             # Determinar elegibilidad y razón
