@@ -245,4 +245,44 @@ async def mark_notification_as_read(db: AsyncSession, user_id: int, notification
     except HTTPException as e:
         raise e
     except Exception as e:
-        await unexpected_exception() 
+        await unexpected_exception()
+
+async def create_notification(
+    db: AsyncSession,
+    user_id: int,
+    title: str,
+    message: str,
+    notification_type: str
+):
+    """
+    Crea una notificación genérica para un usuario
+    """
+    try:
+        # Crear la notificación base
+        notification = Notification(
+            title=title,
+            message=message,
+            type=notification_type
+        )
+        db.add(notification)
+        await db.flush()
+
+        # Asociar la notificación al usuario
+        user_notification = User_notification(
+            notification_id=notification.id,
+            user_id=user_id,
+            is_read=False
+        )
+        db.add(user_notification)
+
+        await db.commit()
+        
+        return {
+            "success": True,
+            "notification_id": notification.id,
+            "user_notification_id": user_notification.id
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        raise e 

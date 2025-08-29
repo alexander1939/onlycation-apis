@@ -54,7 +54,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             detail="El horario solicitado no está dentro del rango de disponibilidad del docente"
         )
 
-    # 5. Validar que no hay traslape con otra reserva ya existente
+    # 5. Validar que no hay traslape con otra reserva ya existente en esa disponibilidad
     from app.models.booking.bookings import Booking
     overlap_result = await db.execute(
         select(Booking).where(
@@ -73,7 +73,25 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             detail=f"Ya existe una reserva en ese horario: {existing_start} - {existing_end}. Por favor selecciona otro horario."
         )
 
-    # 6. Validar que la reserva tiene al menos 1 hora de anticipación
+    # 6. Validar que el MISMO USUARIO no tenga otra reserva al mismo tiempo
+    user_overlap_result = await db.execute(
+        select(Booking).where(
+            Booking.user_id == user.id,
+            Booking.start_time < requested_end,
+            Booking.end_time > requested_start
+        )
+    )
+    user_existing_booking = user_overlap_result.scalar_one_or_none()
+    if user_existing_booking:
+        # Formatear las fechas para mostrar en el error
+        user_existing_start = user_existing_booking.start_time.strftime('%d/%m/%Y %H:%M')
+        user_existing_end = user_existing_booking.end_time.strftime('%d/%m/%Y %H:%M')
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ya tienes una reserva en ese horario: {user_existing_start} - {user_existing_end}. No puedes reservar dos clases al mismo tiempo."
+        )
+
+    # 7. Validar que la reserva tiene al menos 1 hora de anticipación
     time_difference = (requested_start - current_time).total_seconds() / 3600  # en horas
     if time_difference < 1:
         raise HTTPException(
@@ -81,7 +99,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             detail="Debes reservar la clase con al menos 1 hora de anticipación"
         )
 
-    # 5. Obtener el precio asociado al docente y preferencia
+    # 8. Obtener el precio asociado al docente y preferencia
     price_result = await db.execute(
         select(Price).where(
             Price.user_id == disponibilidad.user_id,
