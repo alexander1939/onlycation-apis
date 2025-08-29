@@ -8,10 +8,18 @@ from app.models.users.user import User
 from app.cores.token import verify_token
 
 
+from cryptography.fernet import Fernet
+from decouple import config
+
+
 import os
 import shutil
 import uuid
 from fastapi import UploadFile
+
+
+EVIDENCE_KEY = config("EVIDENCE_ENCRYPTION_KEY")
+cipher = Fernet(EVIDENCE_KEY.encode())
 
 
 UPLOAD_DIR_STUDENT = os.path.join(os.getcwd(), "evidence", "student")
@@ -97,8 +105,12 @@ async def create_confirmation_by_student(
     unique_name = f"{uuid.uuid4().hex}{ext}"
     file_path = os.path.join(UPLOAD_DIR_STUDENT, unique_name)
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(evidence_file.file, buffer)
+    file_byte = await evidence_file.read()
+
+    encrypted_date = cipher.encrypt(file_byte)
+
+    with open(file_path, "wb") as f:
+        f.write(encrypted_date)
 
     confirmation.evidence_student = unique_name
 

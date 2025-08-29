@@ -15,3 +15,4 @@ pytest-flake8
 python-jose[cryptography]
 fastapi-mail
 stripe
+python-decouple

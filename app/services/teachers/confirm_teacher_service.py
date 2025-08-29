@@ -7,9 +7,16 @@ import os
 import shutil
 import uuid
 
+from cryptography.fernet import Fernet
+from decouple import config
+
 from app.models.booking.confirmation import Confirmation
 from app.models.users.user import User
 from app.cores.token import verify_token
+
+# Cargar la clave de .env
+EVIDENCE_KEY = config("EVIDENCE_ENCRYPTION_KEY")
+cipher = Fernet(EVIDENCE_KEY.encode())
 
 # Carpeta raíz para evidencia de teacher
 UPLOAD_DIR_TEACHER = os.path.join(os.getcwd(), "evidence", "teacher")
@@ -69,13 +76,20 @@ async def create_confirmation_by_teacher(
             detail="Es obligatorio la descripción"
         )
 
-    # Guardar archivo con nombre único
+    # Guardar archivo encriptado con nombre único
     ext = os.path.splitext(evidence_file.filename)[1] or ".jpg"
-    unique_name = f"{uuid.uuid4().hex}{ext}"
+    unique_name = f"{uuid.uuid4().hex}{ext}" 
     file_path = os.path.join(UPLOAD_DIR_TEACHER, unique_name)
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(evidence_file.file, buffer)
+    # Leer bytes del archivo
+    file_bytes = await evidence_file.read()
+
+    # Encriptar los bytes
+    encrypted_data = cipher.encrypt(file_bytes)
+
+    # Guardar en disco como encriptado
+    with open(file_path, "wb") as f:
+        f.write(encrypted_data)
 
     # Crear confirmación con evidencia obligatoria
     confirmation = Confirmation(
@@ -83,7 +97,7 @@ async def create_confirmation_by_teacher(
         student_id=student_id,
         payment_booking_id=payment_booking_id,
         confirmation_date_teacher=confirmation_value,
-        evidence_teacher=unique_name,
+        evidence_teacher=unique_name,  # guardamos el nombre .enc
         description_teacher=description_teacher
     )
 

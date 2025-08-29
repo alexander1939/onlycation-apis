@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     admin_role: str
 
     
+    EVIDENCE_ENCRYPTION_KEY: str
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
     MAIL_FROM: str
