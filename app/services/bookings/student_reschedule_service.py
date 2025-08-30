@@ -14,6 +14,10 @@ from app.services.notifications.booking_notification_service import (
     send_reschedule_response_notification,
     send_booking_rescheduled_notification
 )
+from app.services.notifications.booking_email_service import (
+    send_reschedule_response_email,
+    send_booking_rescheduled_email
+)
 logger = logging.getLogger(__name__)
 
 async def get_student_reschedule_requests(
@@ -208,11 +212,30 @@ async def respond_to_reschedule_request(
         }
         await send_reschedule_response_notification(db, teacher_id, response_details)
         
+        # Enviar email al docente con información detallada
+        email_response_details = {
+            'approved': approved,
+            'student_name': f"{request.student.first_name} {request.student.last_name}",
+            'response_message': response_message
+        }
+        await send_reschedule_response_email(db, teacher_id, email_response_details)
+        
         # Si fue aprobado, enviar notificación de reagendado a ambos usuarios
         if approved:
             notification_details = {}
             await send_booking_rescheduled_notification(db, student_id, notification_details)
             await send_booking_rescheduled_notification(db, teacher_id, notification_details)
+            
+            # Enviar emails de reagendado exitoso con detalles
+            email_reschedule_details = {
+                'booking_id': request.booking_id,
+                'old_start_date': request.booking.start_time.strftime('%d/%m/%Y %H:%M'),
+                'old_end_date': request.booking.end_time.strftime('%d/%m/%Y %H:%M'),
+                'new_start_date': request.new_start_time.strftime('%d/%m/%Y %H:%M'),
+                'new_end_date': request.new_end_time.strftime('%d/%m/%Y %H:%M')
+            }
+            await send_booking_rescheduled_email(db, student_id, email_reschedule_details)
+            await send_booking_rescheduled_email(db, teacher_id, email_reschedule_details)
         
         # Obtener el nombre del status actualizado
         final_status_result = await db.execute(select(Status).where(Status.id == request.status_id))

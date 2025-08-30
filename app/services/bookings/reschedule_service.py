@@ -11,6 +11,7 @@ from app.models.teachers.availability import Availability
 from app.models.booking.confirmation import Confirmation
 from app.models.booking.payment_bookings import PaymentBooking
 from app.services.notifications.booking_notification_service import send_booking_rescheduled_notification
+from app.services.notifications.booking_email_service import send_booking_rescheduled_email
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,17 @@ async def reschedule_booking(
         notification_details = {}
         await send_booking_rescheduled_notification(db, student_id, notification_details)
         await send_booking_rescheduled_notification(db, teacher_id, notification_details)
+        
+        # Enviar emails con información detallada
+        email_details = {
+            'booking_id': booking.id,
+            'old_start_date': booking.start_time.strftime('%d/%m/%Y %H:%M'),
+            'old_end_date': booking.end_time.strftime('%d/%m/%Y %H:%M'),
+            'new_start_date': new_start_time.strftime('%d/%m/%Y %H:%M'),
+            'new_end_date': new_end_time.strftime('%d/%m/%Y %H:%M')
+        }
+        await send_booking_rescheduled_email(db, student_id, email_details)
+        await send_booking_rescheduled_email(db, teacher_id, email_details)
         
         return {
             "booking_id": booking.id,

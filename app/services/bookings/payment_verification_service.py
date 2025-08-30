@@ -9,11 +9,17 @@ from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.confirmation import Confirmation
 from app.models.common.status import Status
 from app.models.users.user import User
+from app.models.teachers.availability import Availability
 from app.external.stripe_config import stripe
 from app.services.notifications.booking_notification_service import (
     send_booking_confirmation_to_student,
     send_booking_notification_to_teacher,
     send_payment_confirmation_notification
+)
+from app.services.notifications.booking_email_service import (
+    send_booking_confirmation_email,
+    send_payment_confirmation_email,
+    send_new_booking_email_to_teacher
 )
 from app.services.bookings.room_service import generate_secure_room_link
 
@@ -69,17 +75,22 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
     class_link, room_name = generate_secure_room_link(booking.id, teacher_id, user_id, start_time)
     booking.class_space = class_link
 
-    # Recarga el booking con la relación availability
+    # Recarga el booking con la relación availability y user
     booking_result = await db.execute(
-        select(Booking).options(joinedload(Booking.availability)).where(Booking.id == booking.id)
+        select(Booking).options(
+            joinedload(Booking.availability).joinedload(Availability.user)
+        ).where(Booking.id == booking.id)
     )
     booking = booking_result.scalar_one()
 
-    # Obtener datos del usuario (estudiante) para las notificaciones
+    # Obtener datos del usuario (estudiante) y del docente antes de crear detalles
     user_result = await db.execute(
         select(User).where(User.id == user_id)
     )
     user = user_result.scalar_one()
+    
+    # Obtener datos del docente desde la relación ya cargada
+    teacher_name = f"{booking.availability.user.first_name} {booking.availability.user.last_name}"
 
     # Obtener datos de comisión desde metadata
     commission_rate = float(session.metadata.get("commission_rate", "60.00"))
@@ -120,7 +131,10 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
     booking_details = {
         'booking_id': booking.id,
         'date': booking.start_time.strftime('%d/%m/%Y %H:%M'),
-        'student_name': f"{user.first_name} {user.last_name}"
+        'start_date': booking.start_time.strftime('%d/%m/%Y %H:%M'),
+        'end_date': booking.end_time.strftime('%d/%m/%Y %H:%M'),
+        'student_name': f"{user.first_name} {user.last_name}",
+        'teacher_name': teacher_name
     }
     
     payment_details = {
@@ -139,6 +153,11 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
     
     # Notificar al docente sobre nueva reserva
     await send_booking_notification_to_teacher(db, teacher_id, booking_details)
+    
+    # Enviar emails con información detallada
+    await send_booking_confirmation_email(db, user_id, booking_details)
+    await send_payment_confirmation_email(db, user_id, payment_details)
+    await send_new_booking_email_to_teacher(db, teacher_id, booking_details)
 
     await db.commit()
 

@@ -13,6 +13,7 @@ from app.models.common.status import Status
 from app.models.users.user import User
 from app.services.utils.pagination_service import PaginationService
 from app.services.notifications.booking_notification_service import send_reschedule_request_notification
+from app.services.notifications.booking_email_service import send_reschedule_request_email
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,17 @@ async def create_teacher_reschedule_request(
         # Enviar notificación al estudiante
         reschedule_details = {}
         await send_reschedule_request_notification(db, student_id, reschedule_details)
+        
+        # Enviar email con información detallada
+        email_details = {
+            'teacher_name': f"{booking.availability.user.first_name} {booking.availability.user.last_name}",
+            'current_start_date': booking.start_time.strftime('%d/%m/%Y %H:%M'),
+            'current_end_date': booking.end_time.strftime('%d/%m/%Y %H:%M'),
+            'new_start_date': new_start_time.strftime('%d/%m/%Y %H:%M'),
+            'new_end_date': new_end_time.strftime('%d/%m/%Y %H:%M'),
+            'reason': reason
+        }
+        await send_reschedule_request_email(db, student_id, email_details)
         
         return {
             "request_id": reschedule_request.id,
