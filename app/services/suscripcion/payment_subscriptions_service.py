@@ -87,28 +87,19 @@ async def verify_payment_and_create_subscription(db: AsyncSession, session_id: s
     Verifica el pago con Stripe y crea la suscripción en la base de datos
     """
     try:
-        print(f"🔍 DEBUG: Iniciando verify_payment_and_create_subscription")
-        print(f"   - session_id: {session_id}")
-        print(f"   - user_id: {user_id}")
-        
+       
         # Verificar que el session_id tenga el formato correcto de Stripe
         if not session_id.startswith('cs_'):
             raise HTTPException(status_code=400, detail="Session ID inválido")
 
         # Obtener la sesión de Stripe
-        print(f"📡 DEBUG: Obteniendo sesión de Stripe...")
         session = stripe.checkout.Session.retrieve(session_id)
-        print(f"✅ DEBUG: Sesión obtenida exitosamente")
         
         # Verificar que la sesión pertenece al usuario autenticado
         if session.metadata.get("user_id") != str(user_id):
             raise HTTPException(status_code=403, detail="No tienes permisos para verificar esta sesión")
         
         # Para suscripciones, verificar el status de la sesión en lugar de payment_status
-        print(f"🔍 DEBUG: Verificando estado del pago...")
-        print(f"   - session.status: {session.status}")
-        print(f"   - session.payment_status: {session.payment_status}")
-        print(f"   - session.subscription: {session.subscription}")
         
         # Para suscripciones, el payment_status puede ser 'unpaid' pero el status debe ser 'complete'
         if session.status == "open":
@@ -125,12 +116,7 @@ async def verify_payment_and_create_subscription(db: AsyncSession, session_id: s
                 "payment_status": session.status
             }
         
-        # DEBUG: Verificar el estado de la sesión
-        print(f"🔍 DEBUG Session info:")
-        print(f"   - payment_status: {session.payment_status}")
-        print(f"   - status: {session.status}")
-        print(f"   - subscription: {session.subscription}")
-        print(f"   - metadata: {session.metadata}")
+    
 
         # TEMPORALMENTE DESHABILITADO - Permitir reprocesar para debug
         # existing_payment = await db.execute(
@@ -145,7 +131,6 @@ async def verify_payment_and_create_subscription(db: AsyncSession, session_id: s
         #     print(f"⚠️ DEBUG: Pago ya procesado")
         #     return {"success": True, "message": "Pago ya procesado"}
         
-        print(f"🚀 DEBUG: Continuando con procesamiento de pago...")
         
         user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
@@ -186,8 +171,7 @@ async def process_successful_payment(db: AsyncSession, session):
         plan_id = int(session["metadata"]["plan_id"])
         session_id = session["id"]  # Obtener el session_id del objeto session
 
-        print(f"💾 DEBUG: Procesando pago para user_id: {user_id}, plan_id: {plan_id}")
-        print(f"💾 DEBUG: session_id: {session_id}")
+        
 
         # Validaciones de duplicados
         from app.services.suscripcion.subscription_validation_service import (
@@ -198,7 +182,6 @@ async def process_successful_payment(db: AsyncSession, session):
         # Verificar si ya existe un pago con este session_id
         existing_payment = await check_existing_payment_by_session(db, session_id)
         if existing_payment:
-            print(f"⚠️ DEBUG: Ya existe un PaymentSubscription con session_id: {session_id}")
             return {
                 "success": True,
                 "message": "Pago ya procesado anteriormente",
@@ -208,7 +191,6 @@ async def process_successful_payment(db: AsyncSession, session):
         # Verificar si ya tiene una suscripción activa al mismo plan
         existing_subscription = await check_active_subscription_for_plan(db, user_id, plan_id)
         if existing_subscription:
-            print(f"⚠️ DEBUG: Usuario {user_id} ya tiene suscripción activa al plan {plan_id}")
             return {
                 "success": True,
                 "message": f"Ya tienes una suscripción activa a este plan que expira el {existing_subscription.end_date.strftime('%Y-%m-%d')}",
@@ -224,8 +206,7 @@ async def process_successful_payment(db: AsyncSession, session):
                 invoice = stripe.Invoice.retrieve(latest_invoice_id)
                 payment_intent_id = invoice.get("payment_intent")
                 
-        print(f"💳 DEBUG: stripe_subscription_id: {stripe_subscription_id}")
-        print(f"💳 DEBUG: payment_intent_id: {payment_intent_id}")
+       
 
         user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
@@ -240,7 +221,6 @@ async def process_successful_payment(db: AsyncSession, session):
         if not active_status:
             raise HTTPException(status_code=500, detail="Status activo no encontrado")
 
-        print(f"📊 DEBUG: active_status encontrado: {active_status.id} - {active_status.name}")
 
         payment_subscription = PaymentSubscription(
             plan_id=plan_id,
@@ -250,11 +230,9 @@ async def process_successful_payment(db: AsyncSession, session):
             stripe_payment_intent_id=session_id  # Guardar el session_id aquí
         )
 
-        print(f"💾 DEBUG: Creando PaymentSubscription...")
         db.add(payment_subscription)
         await db.commit()
         await db.refresh(payment_subscription)
-        print(f"✅ DEBUG: PaymentSubscription creado con ID: {payment_subscription.id}")
 
         subscription = Subscription(
             user_id=user_id,
@@ -265,11 +243,9 @@ async def process_successful_payment(db: AsyncSession, session):
             status_id=active_status.id
         )
         
-        print(f"💾 DEBUG: Creando Subscription...")
         db.add(subscription)
         await db.commit()
         await db.refresh(subscription)
-        print(f"✅ DEBUG: Subscription creado con ID: {subscription.id}")
 
         try:
             await create_welcome_notification(db, user)
@@ -279,11 +255,9 @@ async def process_successful_payment(db: AsyncSession, session):
             # Enviar email de confirmación de suscripción
             await send_subscription_confirmation_email(user, plan)
             
-            print(f"✅ Notificaciones y email enviados para usuario {user_id}")
         except Exception as e:
             print(f"⚠️ Error creando notificaciones o enviando email: {str(e)}")
 
-        print(f"Suscripción creada para usuario {user_id}, plan {plan_id}")
     except Exception as e:
         import traceback
         print("ERROR:", e)

@@ -10,7 +10,6 @@ import re
 
 async def get_teacher_commission_rate(db: AsyncSession, teacher_id: int):
     """Obtiene el porcentaje de comisión desde la base de datos usando plan_benefit"""
-    print(f"🔍 DEBUG: Buscando comisión para teacher_id: {teacher_id}")
     
     # Buscar TODAS las suscripciones activas del docente con sus beneficios
     subscription_result = await db.execute(
@@ -29,7 +28,6 @@ async def get_teacher_commission_rate(db: AsyncSession, teacher_id: int):
     
     if not all_subscriptions:
         # Si no tiene suscripción, buscar el plan gratuito por defecto
-        print(f"⚠️ DEBUG: No se encontró suscripción activa para teacher_id {teacher_id}")
         
         # Buscar beneficio de comisión del plan gratuito
         default_result = await db.execute(
@@ -45,29 +43,23 @@ async def get_teacher_commission_rate(db: AsyncSession, teacher_id: int):
         if default_plan_benefit:
             _, default_benefit = default_plan_benefit
             commission_rate = extract_commission_from_benefit(default_benefit.name)
-            print(f"⚠️ DEBUG: Usando plan gratuito por defecto - Comisión: {commission_rate}%")
             return commission_rate
         else:
-            print(f"❌ DEBUG: No se encontró beneficio de comisión para plan gratuito, usando 60% por defecto")
             return 60.00
     
     # Mostrar todas las suscripciones encontradas
-    print(f"📋 DEBUG: Se encontraron {len(all_subscriptions)} suscripciones activas con beneficios de comisión:")
     
     best_commission_rate = None
     best_plan_name = None
     
     for i, (subscription, plan, benefit) in enumerate(all_subscriptions):
         commission_rate = extract_commission_from_benefit(benefit.name)
-        print(f"   {i+1}. Plan: {plan.name}, Beneficio: {benefit.name}, Comisión: {commission_rate}%")
         
         # Seleccionar la menor comisión (mejor para el docente)
         if best_commission_rate is None or commission_rate < best_commission_rate:
             best_commission_rate = commission_rate
             best_plan_name = plan.name
     
-    print(f"🏆 DEBUG: Plan seleccionado: {best_plan_name}")
-    print(f"💰 DEBUG: Comisión aplicada: {best_commission_rate}%")
     
     return best_commission_rate
 
@@ -110,10 +102,6 @@ def calculate_commission_amounts(total_amount_cents: int, commission_rate: float
     commission_amount = int(total_amount_cents * (commission_rate / 100))
     teacher_amount = total_amount_cents - commission_amount
     
-    print(f"🧮 DEBUG: Commission calculation:")
-    print(f"   - Total: {total_amount_cents} centavos")
-    print(f"   - Commission rate: {commission_rate}%")
-    print(f"   - Commission amount: {commission_amount} centavos")
-    print(f"   - Teacher amount: {teacher_amount} centavos")
+  
     
     return commission_amount, teacher_amount

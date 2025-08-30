@@ -84,17 +84,7 @@ async def validate_student_refund_request(
         teacher_didnt_confirm = confirmation.confirmation_date_teacher != True
         can_refund_after_class = teacher_confirmation_window_expired and teacher_didnt_confirm
         
-        print(f"🔍 DEBUG: Validando refund para estudiante {student_id}")
-        print(f"   - Hora actual: {current_time}")
-        print(f"   - Inicio clase: {booking.start_time}")
-        print(f"   - Fin clase: {booking.end_time}")
-        print(f"   - Minutos hasta clase: {minutes_until_class:.1f}")
-        print(f"   - Puede refund antes (>30min): {can_refund_before_class}")
-        print(f"   - Clase terminó: {class_ended}")
-        print(f"   - Clase en progreso: {class_in_progress}")
-        print(f"   - Horas desde fin clase: {hours_since_class_ended:.1f}")
-        print(f"   - Puede refund después: {can_refund_after_class}")
-        print(f"   - Docente confirmó: {confirmation.confirmation_date_teacher}")
+       
         
         # Validar si docente ya confirmó (solo bloquear si confirmó explícitamente)
         if confirmation.confirmation_date_teacher is True:
@@ -272,7 +262,6 @@ async def process_student_refund_request(
     Procesa una solicitud de refund de un estudiante con las nuevas reglas de tiempo
     """
     try:
-        print(f"🎓 DEBUG: Estudiante {student_id} solicitando refund para confirmación {confirmation_id}")
         
         # Validar elegibilidad con nuevas reglas de tiempo
         validation = await validate_student_refund_request(db, student_id, confirmation_id)
@@ -286,18 +275,15 @@ async def process_student_refund_request(
             }
             
         # Crear registro en la base de datos
-        print(f"🔄 DEBUG: Creando registro de refund request en BD")
         refund_request = await create_refund_request_record(db, student_id, confirmation_id, validation)
         
         # Procesar refund automáticamente
-        print(f"🔄 DEBUG: Iniciando process_full_refund para confirmación {confirmation_id}")
         try:
             refund_result = await process_full_refund(
                 db=db,
                 confirmation_id=confirmation_id,
                 admin_user_id=None  # Sistema automático, no requiere admin
             )
-            print(f"✅ DEBUG: process_full_refund completado: {refund_result}")
             
             # Actualizar estado del registro
             if refund_result["success"]:
@@ -307,7 +293,6 @@ async def process_student_refund_request(
                 await db.commit()
                 
         except Exception as e:
-            print(f"❌ DEBUG: Error en process_full_refund: {str(e)}")
             # Marcar como fallido
             refund_request.status = "rejected"
             await db.commit()
@@ -357,7 +342,6 @@ async def handle_get_refund_requests(
     Obtiene las solicitudes de refund del estudiante con paginación
     """
     try:
-        print(f"🎓 DEBUG: Obteniendo refund requests para estudiante {student_id}")
         
         # Obtener refund requests con datos de booking y confirmation
         query = select(RefundRequest).options(

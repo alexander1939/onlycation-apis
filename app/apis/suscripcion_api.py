@@ -238,12 +238,10 @@ async def verificar_pago(
     """
     Verifica el estado del pago y guarda en la base de datos si fue exitoso
     """
-    print(f"🚀 DEBUG: Endpoint verificar-pago llamado con session_id: {session_id}")
-    print(f"👤 DEBUG: user_id: {user_data.get('user_id')}")
+   
     
     result = await verify_payment_and_create_subscription(db, session_id, user_data.get("user_id"))
     
-    print(f"📋 DEBUG: Resultado de verify_payment_and_create_subscription: {result}")
     
     return {
         "success": result["success"],

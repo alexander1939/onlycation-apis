@@ -60,7 +60,6 @@ async def get_my_refundable_bookings(
     - Después de la clase: 4 horas después del fin para que docente confirme, si no confirma = refund automático
     """
     user_id = payload.get("user_id")
-    print(f"🎓 DEBUG: Obteniendo bookings reembolsables para estudiante {user_id}")
     
     result = await handle_get_refundable_bookings(
         db=db,
@@ -88,7 +87,6 @@ async def get_my_refund_requests(
     Con paginación para manejar grandes cantidades de datos
     """
     user_id = payload.get("user_id")
-    print(f"🎓 DEBUG: Obteniendo refund requests para estudiante {user_id}")
     
     result = await handle_get_refund_requests(
         db=db,

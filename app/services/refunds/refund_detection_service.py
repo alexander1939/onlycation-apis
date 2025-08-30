@@ -108,8 +108,7 @@ async def check_refund_eligibility(confirmation: Confirmation) -> Dict:
         teacher_denied = confirmation.confirmation_date_teacher == False
         student_confirmed = confirmation.confirmation_date_student == True
         
-        print(f"🔍 DEBUG: Valores de confirmación - Teacher: {confirmation.confirmation_date_teacher}, Student: {confirmation.confirmation_date_student}")
-        print(f"🔍 DEBUG: teacher_denied: {teacher_denied}, student_confirmed: {student_confirmed}")
+        
         
         booking = confirmation.payment_booking.booking
         payment_booking = confirmation.payment_booking
@@ -125,7 +124,6 @@ async def check_refund_eligibility(confirmation: Confirmation) -> Dict:
         
         # CASO 1: Docente negó la confirmación (teacher_denied = False, student_confirmed = True)
         if teacher_denied and student_confirmed:
-            print(f"🔍 DEBUG: CASO 1 - Docente negó (False) y estudiante confirmó (True)")
             return {
                 "eligible": True,
                 "reason": "Docente negó la confirmación - Refund automático",

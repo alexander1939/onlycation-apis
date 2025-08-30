@@ -32,7 +32,6 @@ async def process_stripe_refund(
                 "stripe_refund_id": None
             }
             
-        print(f"💰 DEBUG: Procesando refund de ${refund_amount/100} MXN para payment_intent: {payment_booking.stripe_payment_intent_id}")
         
         # Crear refund en Stripe
         refund = stripe.Refund.create(
@@ -111,7 +110,6 @@ async def reverse_stripe_transfer(
                 "stripe_reversal_id": None
             }
             
-        print(f"🔄 DEBUG: Revirtiendo transferencia de ${transfer_amount/100} MXN, transfer_id: {payment_booking.stripe_transfer_id}")
         
         # Crear transfer reversal en Stripe
         reversal = stripe.Transfer.create_reversal(

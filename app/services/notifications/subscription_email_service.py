@@ -63,7 +63,6 @@ async def send_subscription_confirmation_email(user: User, plan: Plan):
         )
         
         await send_email(email_data)
-        print(f"📧 Email de suscripción enviado a {user.email}")
         
     except Exception as e:
         print(f"❌ Error enviando email de suscripción: {str(e)}")
@@ -116,7 +115,6 @@ async def send_subscription_welcome_email(user: User):
         )
         
         await send_email(email_data)
-        print(f"📧 Email de bienvenida enviado a {user.email}")
         
     except Exception as e:
         print(f"❌ Error enviando email de bienvenida: {str(e)}")

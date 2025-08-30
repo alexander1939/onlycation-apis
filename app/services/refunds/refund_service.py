@@ -39,12 +39,9 @@ async def process_full_refund(
         Dict con resultado del proceso
     """
     try:
-        print(f"🔄 DEBUG: Iniciando proceso de refund para confirmación {confirmation_id}")
         
         # 1. Obtener confirmación con todos los datos
-        print(f"🔄 DEBUG: Obteniendo confirmación...")
         confirmation = await get_confirmation_for_refund(db, confirmation_id)
-        print(f"🔄 DEBUG: Confirmación obtenida: {confirmation is not None}")
         if not confirmation:
             return {
                 "success": False,
@@ -53,9 +50,7 @@ async def process_full_refund(
             }
             
         # 2. Verificar elegibilidad para refund
-        print(f"🔄 DEBUG: Verificando elegibilidad...")
         eligibility = await check_refund_eligibility(confirmation)
-        print(f"🔄 DEBUG: Elegibilidad: {eligibility}")
         if not eligibility["eligible"]:
             return {
                 "success": False,
@@ -64,13 +59,11 @@ async def process_full_refund(
             }
             
         # 3. Sin restricciones de tiempo - permitir refund en cualquier momento
-        print(f"🔄 DEBUG: Sin restricciones de tiempo - refund permitido")
         time_check = {"allowed": True, "reason": "Sin restricciones de tiempo"}
             
         payment_booking = confirmation.payment_booking
         refund_amount = payment_booking.total_amount
         
-        print(f"💰 DEBUG: Procesando refund de ${refund_amount/100} MXN")
         
         # 4. Procesar refund en Stripe
         refund_result = await process_stripe_refund(
