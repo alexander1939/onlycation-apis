@@ -86,40 +86,65 @@ async def verify_payment_and_create_subscription(db: AsyncSession, session_id: s
     Verifica el pago con Stripe y crea la suscripción en la base de datos
     """
     try:
+        print(f"🔍 DEBUG: Iniciando verify_payment_and_create_subscription")
+        print(f"   - session_id: {session_id}")
+        print(f"   - user_id: {user_id}")
+        
         # Verificar que el session_id tenga el formato correcto de Stripe
         if not session_id.startswith('cs_'):
             raise HTTPException(status_code=400, detail="Session ID inválido")
 
         # Obtener la sesión de Stripe
+        print(f"📡 DEBUG: Obteniendo sesión de Stripe...")
         session = stripe.checkout.Session.retrieve(session_id)
+        print(f"✅ DEBUG: Sesión obtenida exitosamente")
         
         # Verificar que la sesión pertenece al usuario autenticado
         if session.metadata.get("user_id") != str(user_id):
             raise HTTPException(status_code=403, detail="No tienes permisos para verificar esta sesión")
         
-        # Verificar que el pago fue exitoso
-        if session.payment_status != "paid":
+        # Para suscripciones, verificar el status de la sesión en lugar de payment_status
+        print(f"🔍 DEBUG: Verificando estado del pago...")
+        print(f"   - session.status: {session.status}")
+        print(f"   - session.payment_status: {session.payment_status}")
+        print(f"   - session.subscription: {session.subscription}")
+        
+        # Para suscripciones, el payment_status puede ser 'unpaid' pero el status debe ser 'complete'
+        if session.status == "open":
             return {
                 "success": False,
-                "message": "Pago no completado",
-                "payment_status": session.payment_status
+                "message": "El pago aún no se ha completado. Por favor completa el proceso de pago en Stripe.",
+                "payment_status": session.status,
+                "redirect_url": session.url  # URL para completar el pago
             }
-
-        # Verificar si ya se procesó esta sesión
-        existing_payment = await db.execute(
-            select(PaymentSubscription).where(
-                PaymentSubscription.user_id == user_id,
-                PaymentSubscription.created_at >= session.created
-            )
-        )
-        existing_payment = existing_payment.scalar_one_or_none()
-        
-        if existing_payment:
+        elif session.status != "complete":
             return {
-                "success": True,
-                "message": "Pago ya fue procesado anteriormente",
-                "payment_status": session.payment_status
+                "success": False,
+                "message": "Sesión de pago no completada",
+                "payment_status": session.status
             }
+        
+        # DEBUG: Verificar el estado de la sesión
+        print(f"🔍 DEBUG Session info:")
+        print(f"   - payment_status: {session.payment_status}")
+        print(f"   - status: {session.status}")
+        print(f"   - subscription: {session.subscription}")
+        print(f"   - metadata: {session.metadata}")
+
+        # TEMPORALMENTE DESHABILITADO - Permitir reprocesar para debug
+        # existing_payment = await db.execute(
+        #     select(PaymentSubscription).where(
+        #         PaymentSubscription.user_id == user_id,
+        #         PaymentSubscription.created_at >= session.created
+        #     )
+        # )
+        # existing_payment = existing_payment.scalar_one_or_none()
+        
+        # if existing_payment:
+        #     print(f"⚠️ DEBUG: Pago ya procesado")
+        #     return {"success": True, "message": "Pago ya procesado"}
+        
+        print(f"🚀 DEBUG: Continuando con procesamiento de pago...")
         
         user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
@@ -143,7 +168,7 @@ async def verify_payment_and_create_subscription(db: AsyncSession, session_id: s
         return {
             "success": True,
             "message": "Pago verificado y suscripción creada",
-            "payment_status": session.payment_status
+            "payment_status": "active"
         }
 
     except stripe.error.InvalidRequestError:
@@ -158,6 +183,51 @@ async def process_successful_payment(db: AsyncSession, session):
     try:
         user_id = int(session["metadata"]["user_id"])
         plan_id = int(session["metadata"]["plan_id"])
+        session_id = session["id"]  # Obtener el session_id del objeto session
+
+        print(f"💾 DEBUG: Procesando pago para user_id: {user_id}, plan_id: {plan_id}")
+        print(f"💾 DEBUG: session_id: {session_id}")
+
+        # VERIFICAR SI YA EXISTE UNA SUSCRIPCIÓN CON ESTE SESSION_ID
+        existing_payment_result = await db.execute(
+            select(PaymentSubscription).where(
+                PaymentSubscription.stripe_payment_intent_id == session_id
+            )
+        )
+        existing_payment = existing_payment_result.scalars().first()
+        
+        if existing_payment:
+            print(f"⚠️ DEBUG: Ya existe un PaymentSubscription con session_id: {session_id}")
+            return {
+                "success": True,
+                "message": "Pago ya procesado anteriormente",
+                "payment_status": "active"
+            }
+
+        # VERIFICAR SI YA TIENE UNA SUSCRIPCIÓN ACTIVA AL MISMO PLAN
+        from datetime import datetime
+        now = datetime.utcnow()
+        
+        existing_subscription_result = await db.execute(
+            select(Subscription)
+            .options(joinedload(Subscription.plan))
+            .join(Status)
+            .where(
+                Subscription.user_id == user_id,
+                Subscription.plan_id == plan_id,
+                Status.name == "active",
+                Subscription.end_date > now
+            )
+        )
+        existing_subscription = existing_subscription_result.scalars().first()
+        
+        if existing_subscription:
+            print(f"⚠️ DEBUG: Usuario {user_id} ya tiene suscripción activa al plan {plan_id}")
+            return {
+                "success": True,
+                "message": f"Ya tienes una suscripción activa a este plan que expira el {existing_subscription.end_date.strftime('%Y-%m-%d')}",
+                "payment_status": "active"
+            }
 
         stripe_subscription_id = session.get("subscription")
         payment_intent_id = None
@@ -167,6 +237,9 @@ async def process_successful_payment(db: AsyncSession, session):
             if latest_invoice_id:
                 invoice = stripe.Invoice.retrieve(latest_invoice_id)
                 payment_intent_id = invoice.get("payment_intent")
+                
+        print(f"💳 DEBUG: stripe_subscription_id: {stripe_subscription_id}")
+        print(f"💳 DEBUG: payment_intent_id: {payment_intent_id}")
 
         user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
@@ -181,18 +254,21 @@ async def process_successful_payment(db: AsyncSession, session):
         if not active_status:
             raise HTTPException(status_code=500, detail="Status activo no encontrado")
 
+        print(f"📊 DEBUG: active_status encontrado: {active_status.id} - {active_status.name}")
+
         payment_subscription = PaymentSubscription(
             plan_id=plan_id,
             user_id=user_id,
             status_id=active_status.id,
             payment_date=datetime.utcnow(), 
-            stripe_payment_intent_id=payment_intent_id
+            stripe_payment_intent_id=session_id  # Guardar el session_id aquí
         )
 
-        
+        print(f"💾 DEBUG: Creando PaymentSubscription...")
         db.add(payment_subscription)
         await db.commit()
         await db.refresh(payment_subscription)
+        print(f"✅ DEBUG: PaymentSubscription creado con ID: {payment_subscription.id}")
 
         subscription = Subscription(
             user_id=user_id,
@@ -203,9 +279,11 @@ async def process_successful_payment(db: AsyncSession, session):
             status_id=active_status.id
         )
         
+        print(f"💾 DEBUG: Creando Subscription...")
         db.add(subscription)
         await db.commit()
         await db.refresh(subscription)
+        print(f"✅ DEBUG: Subscription creado con ID: {subscription.id}")
 
         try:
             await create_welcome_notification(db, user)
@@ -235,6 +313,43 @@ async def subscribe_user_to_plan(db: AsyncSession, user: User, plan_guy: str):
         
         if not plan:
             raise HTTPException(status_code=404, detail="Plan no encontrado o inactivo")
+
+        # Verificar suscripción activa del usuario
+        try:
+            current_subscription_result = await db.execute(
+                select(Subscription)
+                .options(joinedload(Subscription.plan))
+                .join(Status)
+                .where(
+                    Subscription.user_id == user.id,
+                    Status.name == "active"
+                )
+                .order_by(Subscription.start_date.desc())
+            )
+            current_subscription = current_subscription_result.scalars().first()
+            
+            if current_subscription:
+                # Verificar si la suscripción actual ha expirado
+                from datetime import datetime
+                now = datetime.utcnow()
+                
+                # Si ya tiene el mismo plan Y está activo Y no ha expirado, no permitir duplicado
+                if (current_subscription.plan.guy == plan_guy and 
+                    current_subscription.end_date > now):
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Ya tienes una suscripción activa al plan {current_subscription.plan.name} que expira el {current_subscription.end_date.strftime('%Y-%m-%d')}"
+                    )
+                
+                # Si tiene plan gratuito y quiere premium, permitir agregar nueva suscripción
+                if current_subscription.plan.name == "Plan Gratuito" and plan.name != "Plan Gratuito":
+                    # Mantener plan gratuito activo, agregar nueva suscripción premium
+                    # Cuando expire el premium, automáticamente volverá al gratuito
+                    pass
+                    
+        except Exception as e:
+            # Si no hay suscripción activa, continuar normalmente
+            pass
 
         # Verificar que el plan tiene stripe_price_id configurado
         if not plan.stripe_price_id:
