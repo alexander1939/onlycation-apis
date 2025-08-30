@@ -64,16 +64,44 @@ async def create_subscription_notification(db: AsyncSession, user: User, plan_na
     Crea una notificación específica de suscripción
     """
     try:
-        # Crear notificación de suscripción
-        notification = Notification(
-            title=f"Suscripción activada - {plan_name}",
-            message=f"Tu suscripción al plan {plan_name} ha sido activada exitosamente. ¡Disfruta de todos los beneficios!",
-            type="subscription"
+        # Verificar si ya existe una notificación de suscripción para este usuario y plan
+        existing_user_notification = await db.execute(
+            select(User_notification)
+            .join(Notification)
+            .where(
+                User_notification.user_id == user.id,
+                Notification.title == f"Suscripción activada - {plan_name}",
+                Notification.type == "subscription"
+            )
         )
         
-        db.add(notification)
-        await db.commit()
-        await db.refresh(notification)
+        if existing_user_notification.scalar_one_or_none():
+            print(f"⚠️ Ya existe notificación de suscripción para usuario {user.id} y plan {plan_name}")
+            return {
+                "success": True,
+                "message": "Notificación de suscripción ya existe",
+                "data": None
+            }
+        
+        # Buscar si ya existe una notificación base para este plan
+        existing_notification = await db.execute(
+            select(Notification).where(
+                Notification.title == f"Suscripción activada - {plan_name}",
+                Notification.type == "subscription"
+            )
+        )
+        notification = existing_notification.scalar_one_or_none()
+        
+        # Si no existe, crear la notificación base
+        if not notification:
+            notification = Notification(
+                title=f"Suscripción activada - {plan_name}",
+                message=f"Tu suscripción al plan {plan_name} ha sido activada exitosamente. ¡Disfruta de todos los beneficios!",
+                type="subscription"
+            )
+            db.add(notification)
+            await db.commit()
+            await db.refresh(notification)
         
         # Asignar al usuario
         user_notification = User_notification(

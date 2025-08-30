@@ -12,7 +12,9 @@ from app.services.validation.exception import unexpected_exception
 from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, UpdateBenefitRequest
 from datetime import datetime, timedelta
 from app.external.stripe_config import stripe
-from app.services.notifications import create_welcome_notification, create_subscription_notification
+from app.services.notifications.notification_service import create_welcome_notification, create_subscription_notification
+from app.services.externals.email_service import send_email
+from app.schemas.externals.email_schema import EmailSchema
 
 async def get_active_status(db: AsyncSession):
     """Obtiene el status activo"""
@@ -290,9 +292,12 @@ async def process_successful_payment(db: AsyncSession, session):
             
             await create_subscription_notification(db, user, plan.name)
             
-            print(f"✅ Notificaciones creadas para usuario {user_id}")
+            # Enviar email de confirmación de suscripción
+            await send_subscription_email(user, plan)
+            
+            print(f"✅ Notificaciones y email enviados para usuario {user_id}")
         except Exception as e:
-            print(f"⚠️ Error creando notificaciones: {str(e)}")
+            print(f"⚠️ Error creando notificaciones o enviando email: {str(e)}")
 
         print(f"Suscripción creada para usuario {user_id}, plan {plan_id}")
     except Exception as e:
@@ -300,6 +305,70 @@ async def process_successful_payment(db: AsyncSession, session):
         print("ERROR:", e)
         traceback.print_exc()
         raise e
+async def send_subscription_email(user: User, plan: Plan):
+    """Envía email de confirmación de suscripción"""
+    try:
+        # Crear template HTML para el email
+        email_body = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #4CAF50; color: white; padding: 20px; text-align: center;">
+                <h1>¡Suscripción Confirmada! 🎉</h1>
+            </div>
+            
+            <div style="padding: 20px;">
+                <h2>Hola {user.first_name} {user.last_name},</h2>
+                
+                <p>¡Excelente noticia! Tu suscripción al <strong>{plan.name}</strong> ha sido confirmada exitosamente.</p>
+                
+                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                    <h3>Detalles de tu suscripción:</h3>
+                    <ul>
+                        <li><strong>Plan:</strong> {plan.name}</li>
+                        <li><strong>Precio:</strong> ${plan.price} MXN</li>
+                        <li><strong>Estado:</strong> Activa</li>
+                        <li><strong>Fecha de inicio:</strong> {datetime.utcnow().strftime('%d/%m/%Y')}</li>
+                    </ul>
+                </div>
+                
+                <p>Ahora puedes disfrutar de todos los beneficios de tu plan premium:</p>
+                <ul>
+                    <li>✅ Acceso completo a la plataforma</li>
+                    <li>✅ Funciones avanzadas</li>
+                    <li>✅ Soporte prioritario</li>
+                </ul>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="#" style="background-color: #4CAF50; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px;">
+                        Acceder a mi cuenta
+                    </a>
+                </div>
+                
+                <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
+                
+                <p>¡Gracias por confiar en OnlyCation!</p>
+                
+                <hr style="margin: 30px 0;">
+                <p style="color: #666; font-size: 12px;">
+                    Este es un email automático, por favor no respondas a este mensaje.
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        email_data = EmailSchema(
+            email=user.email,
+            subject=f"✅ Suscripción confirmada - {plan.name}",
+            body=email_body
+        )
+        
+        await send_email(email_data)
+        print(f"📧 Email de suscripción enviado a {user.email}")
+        
+    except Exception as e:
+        print(f"❌ Error enviando email de suscripción: {str(e)}")
+
 async def subscribe_user_to_plan(db: AsyncSession, user: User, plan_guy: str):
     """
     Función mejorada para suscribir usuario a un plan
