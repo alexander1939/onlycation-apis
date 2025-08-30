@@ -1,6 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from app.models.booking.confirmation import Confirmation
-from app.services.notifications.notification_service import create_notification
+from app.models.booking.payment_bookings import PaymentBooking
+from app.models.booking.bookings import Booking
+from app.models.teachers.availability import Availability
+from app.models.users.user import User
+from app.services.notifications.booking_notification_service import (
+    send_refund_processed_notification
+)
+from app.services.notifications.booking_email_service import (
+    send_refund_processed_email
+)
 from typing import Dict
 import logging
 
@@ -16,35 +27,50 @@ async def send_refund_notifications(
     Envía notificaciones de refund al estudiante y docente
     """
     try:
-        booking = confirmation.booking
-        student = booking.user
-        teacher = booking.availability.user
-        
-        # Notificación al estudiante
-        student_message = f"Tu refund de ${refund_amount/100} MXN ha sido procesado. Razón: {refund_reason}"
-        await create_notification(
-            db=db,
-            user_id=student.id,
-            title="Refund Procesado",
-            message=student_message,
-            notification_type="refund_processed"
+        # Obtener el payment_booking con todas las relaciones necesarias
+        payment_booking_result = await db.execute(
+            select(PaymentBooking).options(
+                joinedload(PaymentBooking.booking).joinedload(Booking.availability).joinedload(Availability.user)
+            ).where(PaymentBooking.id == confirmation.payment_booking_id)
         )
+        payment_booking = payment_booking_result.scalar_one()
         
-        # Notificación al docente
-        teacher_message = f"Se procesó un refund para tu clase con {student.first_name}. Monto: ${refund_amount/100} MXN"
-        await create_notification(
-            db=db,
-            user_id=teacher.id,
-            title="Refund de Clase",
-            message=teacher_message,
-            notification_type="refund_teacher"
+        booking = payment_booking.booking
+        student_id = confirmation.student_id
+        teacher_id = confirmation.teacher_id
+        
+        # Obtener datos del estudiante
+        student_result = await db.execute(
+            select(User).where(User.id == student_id)
         )
+        student = student_result.scalar_one()
         
-        logger.info(f"✅ Notificaciones de refund enviadas para confirmación {confirmation.id}")
+        # Obtener datos del docente
+        teacher_result = await db.execute(
+            select(User).where(User.id == teacher_id)
+        )
+        teacher = teacher_result.scalar_one()
+        
+        # Preparar detalles del reembolso
+        refund_details = {
+            'class_date': booking.start_time.strftime('%d/%m/%Y %H:%M') + ' - ' + booking.end_time.strftime('%H:%M'),
+            'teacher_name': f"{teacher.first_name} {teacher.last_name}",
+            'amount': f"{refund_amount/100:.2f}",
+            'reason': refund_reason,
+            'processed_date': 'Hoy',
+            'payment_method': 'Método original'
+        }
+        
+        # Enviar notificación y email al estudiante
+        await send_refund_processed_notification(db, student_id, refund_details)
+        await send_refund_processed_email(db, student_id, refund_details)
+        
+        logger.info(f"✅ Notificaciones y emails de refund enviados para confirmación {confirmation.id}")
         
         return {
             "success": True,
-            "notifications_sent": 2
+            "notifications_sent": 1,
+            "emails_sent": 1
         }
         
     except Exception as e:
