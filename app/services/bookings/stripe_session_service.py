@@ -56,11 +56,19 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
 
     # 5. Validar que no hay traslape con otra reserva ya existente en esa disponibilidad
     from app.models.booking.bookings import Booking
+    from app.models.common.status import Status
+    
+    # Obtener el ID del status 'cancelled'
+    cancelled_status_result = await db.execute(select(Status).where(Status.name == "cancelled"))
+    cancelled_status = cancelled_status_result.scalar_one_or_none()
+    cancelled_status_id = cancelled_status.id if cancelled_status else None
+    
     overlap_result = await db.execute(
         select(Booking).where(
             Booking.availability_id == booking_data.availability_id,
             Booking.start_time < requested_end,
-            Booking.end_time > requested_start
+            Booking.end_time > requested_start,
+            Booking.status_id != cancelled_status_id if cancelled_status_id else True
         )
     )
     existing_booking = overlap_result.scalar_one_or_none()
@@ -78,7 +86,8 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         select(Booking).where(
             Booking.user_id == user.id,
             Booking.start_time < requested_end,
-            Booking.end_time > requested_start
+            Booking.end_time > requested_start,
+            Booking.status_id != cancelled_status_id if cancelled_status_id else True
         )
     )
     user_existing_booking = user_overlap_result.scalar_one_or_none()

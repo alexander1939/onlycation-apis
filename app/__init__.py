@@ -42,6 +42,7 @@ from  app.models.notifications.user_notifications import User_notification
 from app.models.booking.bookings import Booking
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.confirmation import Confirmation
+from app.models.booking.reschedule_request import RescheduleRequest
 
 from app.models.refunds.refund_request import RefundRequest
 

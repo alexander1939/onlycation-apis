@@ -20,6 +20,7 @@ class Booking(Base):
     availability = relationship("Availability", backref="bookings")
     user = relationship("User", backref="bookings")
     status = relationship("Status", backref="bookings")
+    reschedule_requests = relationship("RescheduleRequest", back_populates="booking")
 
     def __repr__(self):
         return f"<PaymentBooking(availability_id={self.availability_id}, user_id={self.user_id}, status_id={self.status_id}, class_space={self.class_space})>"
