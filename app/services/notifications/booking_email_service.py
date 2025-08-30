@@ -4,7 +4,7 @@ Servicio de emails para notificaciones de reservas con información detallada
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from fastapi_mail import FastMail, MessageSchema
+from fastapi_mail import FastMail, MessageSchema, MessageType
 from datetime import datetime
 from typing import Optional
 import logging
@@ -396,4 +396,334 @@ async def send_booking_rescheduled_email(
         
     except Exception as e:
         logger.error(f"❌ Error enviando email de reagendado exitoso: {str(e)}")
+        return False
+
+
+async def send_refund_request_email(
+    db: AsyncSession, 
+    user_id: int, 
+    refund_details: dict
+) -> bool:
+    """
+    Enviar email cuando se solicita un reembolso
+    """
+    try:
+        # Obtener datos del usuario
+        user_result = await db.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = user_result.scalar_one()
+        
+        # Template HTML para solicitud de reembolso
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .booking-details {{ background-color: white; padding: 15px; margin: 15px 0; border-radius: 5px; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; }}
+                .highlight {{ color: #4CAF50; font-weight: bold; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Solicitud de Reembolso Recibida</h1>
+                </div>
+                <div class="content">
+                    <p>Hola <strong>{user.first_name} {user.last_name}</strong>,</p>
+                    
+                    <p>Hemos recibido tu solicitud de reembolso y está siendo procesada por nuestro equipo.</p>
+                    
+                    <div class="booking-details">
+                        <h3>Detalles del Reembolso:</h3>
+                        <p><strong>Clase:</strong> {refund_details.get('class_date', 'N/A')}</p>
+                        <p><strong>Docente:</strong> {refund_details.get('teacher_name', 'N/A')}</p>
+                        <p><strong>Monto:</strong> <span class="highlight">${refund_details.get('amount', 'N/A')}</span></p>
+                        <p><strong>Razón:</strong> {refund_details.get('reason', 'No especificada')}</p>
+                    </div>
+                    
+                    <p>Te notificaremos por email cuando tengamos una respuesta sobre tu solicitud.</p>
+                    
+                    <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
+                </div>
+                <div class="footer">
+                    <p>Gracias por usar OnlyCation</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Enviar email
+        message = MessageSchema(
+            subject="Solicitud de Reembolso Recibida - OnlyCation",
+            recipients=[user.email],
+            body=html_content,
+            subtype=MessageType.html
+        )
+        
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        
+        logger.info(f"✅ Email de solicitud de reembolso enviado a {user.email}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error enviando email de solicitud de reembolso: {str(e)}")
+        return False
+
+
+async def send_refund_approved_email(
+    db: AsyncSession, 
+    user_id: int, 
+    refund_details: dict
+) -> bool:
+    """
+    Enviar email cuando un reembolso es aprobado
+    """
+    try:
+        # Obtener datos del usuario
+        user_result = await db.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = user_result.scalar_one()
+        
+        # Template HTML para reembolso aprobado
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .booking-details {{ background-color: white; padding: 15px; margin: 15px 0; border-radius: 5px; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; }}
+                .highlight {{ color: #4CAF50; font-weight: bold; }}
+                .success {{ background-color: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin: 15px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>¡Reembolso Aprobado!</h1>
+                </div>
+                <div class="content">
+                    <p>Hola <strong>{user.first_name} {user.last_name}</strong>,</p>
+                    
+                    <div class="success">
+                        <p><strong>¡Buenas noticias!</strong> Tu solicitud de reembolso ha sido aprobada.</p>
+                    </div>
+                    
+                    <div class="booking-details">
+                        <h3>Detalles del Reembolso:</h3>
+                        <p><strong>Clase:</strong> {refund_details.get('class_date', 'N/A')}</p>
+                        <p><strong>Docente:</strong> {refund_details.get('teacher_name', 'N/A')}</p>
+                        <p><strong>Monto a reembolsar:</strong> <span class="highlight">${refund_details.get('amount', 'N/A')}</span></p>
+                        <p><strong>Tiempo estimado de procesamiento:</strong> {refund_details.get('processing_time', '3-5 días hábiles')}</p>
+                    </div>
+                    
+                    <p>El reembolso será procesado y aparecerá en tu método de pago original en los próximos días hábiles.</p>
+                    
+                    <p>Te enviaremos otro email cuando el reembolso haya sido procesado completamente.</p>
+                </div>
+                <div class="footer">
+                    <p>Gracias por usar OnlyCation</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Enviar email
+        message = MessageSchema(
+            subject="Reembolso Aprobado - OnlyCation",
+            recipients=[user.email],
+            body=html_content,
+            subtype=MessageType.html
+        )
+        
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        
+        logger.info(f"✅ Email de reembolso aprobado enviado a {user.email}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error enviando email de reembolso aprobado: {str(e)}")
+        return False
+
+
+async def send_refund_rejected_email(
+    db: AsyncSession, 
+    user_id: int, 
+    refund_details: dict
+) -> bool:
+    """
+    Enviar email cuando un reembolso es rechazado
+    """
+    try:
+        # Obtener datos del usuario
+        user_result = await db.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = user_result.scalar_one()
+        
+        # Template HTML para reembolso rechazado
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #f44336; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .booking-details {{ background-color: white; padding: 15px; margin: 15px 0; border-radius: 5px; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; }}
+                .highlight {{ color: #f44336; font-weight: bold; }}
+                .warning {{ background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 15px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Solicitud de Reembolso Rechazada</h1>
+                </div>
+                <div class="content">
+                    <p>Hola <strong>{user.first_name} {user.last_name}</strong>,</p>
+                    
+                    <div class="warning">
+                        <p><strong>Lamentamos informarte</strong> que tu solicitud de reembolso no pudo ser aprobada.</p>
+                    </div>
+                    
+                    <div class="booking-details">
+                        <h3>Detalles de la Solicitud:</h3>
+                        <p><strong>Clase:</strong> {refund_details.get('class_date', 'N/A')}</p>
+                        <p><strong>Docente:</strong> {refund_details.get('teacher_name', 'N/A')}</p>
+                        <p><strong>Monto solicitado:</strong> <span class="highlight">${refund_details.get('amount', 'N/A')}</span></p>
+                        <p><strong>Razón del rechazo:</strong> {refund_details.get('rejection_reason', 'No cumple con las políticas de reembolso')}</p>
+                    </div>
+                    
+                    <p>Si tienes preguntas sobre esta decisión o crees que hay un error, por favor contacta a nuestro equipo de soporte.</p>
+                    
+                    <p>Puedes revisar nuestras políticas de reembolso en tu panel de usuario.</p>
+                </div>
+                <div class="footer">
+                    <p>Gracias por usar OnlyCation</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Enviar email
+        message = MessageSchema(
+            subject="Solicitud de Reembolso Rechazada - OnlyCation",
+            recipients=[user.email],
+            body=html_content,
+            subtype=MessageType.html
+        )
+        
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        
+        logger.info(f"✅ Email de reembolso rechazado enviado a {user.email}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error enviando email de reembolso rechazado: {str(e)}")
+        return False
+
+
+async def send_refund_processed_email(
+    db: AsyncSession, 
+    user_id: int, 
+    refund_details: dict
+) -> bool:
+    """
+    Enviar email cuando un reembolso ha sido procesado exitosamente
+    """
+    try:
+        # Obtener datos del usuario
+        user_result = await db.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = user_result.scalar_one()
+        
+        # Template HTML para reembolso procesado
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .booking-details {{ background-color: white; padding: 15px; margin: 15px 0; border-radius: 5px; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; }}
+                .highlight {{ color: #4CAF50; font-weight: bold; }}
+                .success {{ background-color: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin: 15px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>¡Reembolso Procesado Exitosamente!</h1>
+                </div>
+                <div class="content">
+                    <p>Hola <strong>{user.first_name} {user.last_name}</strong>,</p>
+                    
+                    <div class="success">
+                        <p><strong>¡Excelente!</strong> Tu reembolso ha sido procesado exitosamente.</p>
+                    </div>
+                    
+                    <div class="booking-details">
+                        <h3>Detalles del Reembolso Procesado:</h3>
+                        <p><strong>Clase:</strong> {refund_details.get('class_date', 'N/A')}</p>
+                        <p><strong>Docente:</strong> {refund_details.get('teacher_name', 'N/A')}</p>
+                        <p><strong>Monto reembolsado:</strong> <span class="highlight">${refund_details.get('amount', 'N/A')}</span></p>
+                        <p><strong>Fecha de procesamiento:</strong> {refund_details.get('processed_date', 'Hoy')}</p>
+                        <p><strong>Método de pago:</strong> {refund_details.get('payment_method', 'Método original')}</p>
+                    </div>
+                    
+                    <p>El reembolso aparecerá en tu estado de cuenta en los próximos 1-3 días hábiles, dependiendo de tu banco o proveedor de tarjeta.</p>
+                    
+                    <p>Si no ves el reembolso después de este tiempo, por favor contacta a tu banco o a nuestro equipo de soporte.</p>
+                </div>
+                <div class="footer">
+                    <p>Gracias por usar OnlyCation</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Enviar email
+        message = MessageSchema(
+            subject="Reembolso Procesado Exitosamente - OnlyCation",
+            recipients=[user.email],
+            body=html_content,
+            subtype=MessageType.html
+        )
+        
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        
+        logger.info(f"✅ Email de reembolso procesado enviado a {user.email}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error enviando email de reembolso procesado: {str(e)}")
         return False

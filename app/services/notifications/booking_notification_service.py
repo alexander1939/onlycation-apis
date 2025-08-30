@@ -266,3 +266,215 @@ async def send_booking_rescheduled_notification(
         await db.rollback()
         logger.error(f"❌ Error enviando notificación de reagendado: {str(e)}")
         return False
+
+
+async def send_refund_request_notification(
+    db: AsyncSession, 
+    user_id: int, 
+    notification_details: dict
+) -> bool:
+    """
+    Enviar notificación cuando se solicita un reembolso
+    """
+    try:
+        # Verificar si ya existe una notificación de este tipo
+        existing_notification = await db.execute(
+            select(Notification).where(Notification.type == "refund_requested").limit(1)
+        )
+        notification = existing_notification.scalar_one_or_none()
+        
+        if not notification:
+            # Crear notificación si no existe
+            notification = Notification(
+                title="Solicitud de reembolso",
+                message="Tu solicitud de reembolso ha sido recibida y está siendo procesada.",
+                type="refund_requested"
+            )
+            db.add(notification)
+            await db.flush()
+        
+        # Verificar si el usuario ya tiene esta notificación
+        existing_user_notification = await db.execute(
+            select(User_notification).where(
+                User_notification.notification_id == notification.id,
+                User_notification.user_id == user_id
+            ).limit(1)
+        )
+        
+        if not existing_user_notification.scalar_one_or_none():
+            # Asociar al usuario solo si no existe
+            user_notification = User_notification(
+                notification_id=notification.id,
+                user_id=user_id,
+                is_read=False
+            )
+            db.add(user_notification)
+            await db.commit()
+            logger.info(f"✅ Notificación de solicitud de reembolso enviada al usuario {user_id}")
+        else:
+            logger.info(f"Usuario {user_id} ya tiene la notificación de solicitud de reembolso")
+        return True
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"❌ Error enviando notificación de solicitud de reembolso: {str(e)}")
+        return False
+
+
+async def send_refund_approved_notification(
+    db: AsyncSession, 
+    user_id: int, 
+    notification_details: dict
+) -> bool:
+    """
+    Enviar notificación cuando un reembolso es aprobado
+    """
+    try:
+        # Verificar si ya existe una notificación de este tipo
+        existing_notification = await db.execute(
+            select(Notification).where(Notification.type == "refund_approved").limit(1)
+        )
+        notification = existing_notification.scalar_one_or_none()
+        
+        if not notification:
+            # Crear notificación si no existe
+            notification = Notification(
+                title="Reembolso aprobado",
+                message="Tu reembolso ha sido aprobado y será procesado pronto.",
+                type="refund_approved"
+            )
+            db.add(notification)
+            await db.flush()
+        
+        # Verificar si el usuario ya tiene esta notificación
+        existing_user_notification = await db.execute(
+            select(User_notification).where(
+                User_notification.notification_id == notification.id,
+                User_notification.user_id == user_id
+            ).limit(1)
+        )
+        
+        if not existing_user_notification.scalar_one_or_none():
+            # Asociar al usuario solo si no existe
+            user_notification = User_notification(
+                notification_id=notification.id,
+                user_id=user_id,
+                is_read=False
+            )
+            db.add(user_notification)
+            await db.commit()
+            logger.info(f"✅ Notificación de reembolso aprobado enviada al usuario {user_id}")
+        else:
+            logger.info(f"Usuario {user_id} ya tiene la notificación de reembolso aprobado")
+        return True
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"❌ Error enviando notificación de reembolso aprobado: {str(e)}")
+        return False
+
+
+async def send_refund_rejected_notification(
+    db: AsyncSession, 
+    user_id: int, 
+    notification_details: dict
+) -> bool:
+    """
+    Enviar notificación cuando un reembolso es rechazado
+    """
+    try:
+        # Verificar si ya existe una notificación de este tipo
+        existing_notification = await db.execute(
+            select(Notification).where(Notification.type == "refund_rejected").limit(1)
+        )
+        notification = existing_notification.scalar_one_or_none()
+        
+        if not notification:
+            # Crear notificación si no existe
+            notification = Notification(
+                title="Reembolso rechazado",
+                message="Tu solicitud de reembolso ha sido rechazada. Revisa los detalles en tu panel.",
+                type="refund_rejected"
+            )
+            db.add(notification)
+            await db.flush()
+        
+        # Verificar si el usuario ya tiene esta notificación
+        existing_user_notification = await db.execute(
+            select(User_notification).where(
+                User_notification.notification_id == notification.id,
+                User_notification.user_id == user_id
+            ).limit(1)
+        )
+        
+        if not existing_user_notification.scalar_one_or_none():
+            # Asociar al usuario solo si no existe
+            user_notification = User_notification(
+                notification_id=notification.id,
+                user_id=user_id,
+                is_read=False
+            )
+            db.add(user_notification)
+            await db.commit()
+            logger.info(f"✅ Notificación de reembolso rechazado enviada al usuario {user_id}")
+        else:
+            logger.info(f"Usuario {user_id} ya tiene la notificación de reembolso rechazado")
+        return True
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"❌ Error enviando notificación de reembolso rechazado: {str(e)}")
+        return False
+
+
+async def send_refund_processed_notification(
+    db: AsyncSession, 
+    user_id: int, 
+    notification_details: dict
+) -> bool:
+    """
+    Enviar notificación cuando un reembolso ha sido procesado exitosamente
+    """
+    try:
+        # Verificar si ya existe una notificación de este tipo
+        existing_notification = await db.execute(
+            select(Notification).where(Notification.type == "refund_processed").limit(1)
+        )
+        notification = existing_notification.scalar_one_or_none()
+        
+        if not notification:
+            # Crear notificación si no existe
+            notification = Notification(
+                title="Reembolso procesado",
+                message="Tu reembolso ha sido procesado exitosamente.",
+                type="refund_processed"
+            )
+            db.add(notification)
+            await db.flush()
+        
+        # Verificar si el usuario ya tiene esta notificación
+        existing_user_notification = await db.execute(
+            select(User_notification).where(
+                User_notification.notification_id == notification.id,
+                User_notification.user_id == user_id
+            ).limit(1)
+        )
+        
+        if not existing_user_notification.scalar_one_or_none():
+            # Asociar al usuario solo si no existe
+            user_notification = User_notification(
+                notification_id=notification.id,
+                user_id=user_id,
+                is_read=False
+            )
+            db.add(user_notification)
+            await db.commit()
+            logger.info(f"✅ Notificación de reembolso procesado enviada al usuario {user_id}")
+        else:
+            logger.info(f"Usuario {user_id} ya tiene la notificación de reembolso procesado")
+        return True
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"❌ Error enviando notificación de reembolso procesado: {str(e)}")
+        return False
