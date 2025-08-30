@@ -2,12 +2,17 @@ from fastapi import APIRouter, Depends, Form, File, UploadFile, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fastapi.responses import StreamingResponse
+import io
+
 from app.apis.deps import auth_required, get_db
 from app.schemas.teachers.confirm_teacher_schema import (
     ConfirmationCreateResponse,
     ConfirmationData
 )
 from app.services.teachers.confirm_teacher_service import create_confirmation_by_teacher
+from app.services.teachers.confirm_teacher_service import get_teacher_evidence
+
 
 security = HTTPBearer()
 router = APIRouter()
@@ -45,4 +50,25 @@ async def confirm_teacher(
             evidence_teacher=confirmation_obj.evidence_teacher,
             description_teacher=confirmation_obj.description_teacher
         )
+    )
+
+
+@router.get("/teacher/evidence/{confirmation_id}")
+async def get_teacher_evidence_api(
+    confirmation_id: int,
+    db: AsyncSession = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+
+    # Obtener bytes desencriptados desde el service
+    evidence_bytes, filename = await get_teacher_evidence(db, token, confirmation_id)
+
+    # Retornar como archivo descargable
+    return StreamingResponse(
+        io.BytesIO(evidence_bytes),
+        media_type="image/jpeg",  # o detectar dinámicamente
+        headers={
+            "Content-Disposition": f"inline; filename={filename}"
+        }
     )

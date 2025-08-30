@@ -125,3 +125,34 @@ async def create_confirmation_by_student(
     await db.refresh(confirmation)
 
     return confirmation
+
+
+async def get_student_evidence(db: AsyncSession, token: str, confirmation_id: int):
+    student_id = await get_student_id_from_token(token)
+
+    # Buscar la confirmación
+    result = await db.execute(
+        select(Confirmation).where(
+            Confirmation.id == confirmation_id,
+            Confirmation.student_id == student_id
+        )
+    )
+    confirmation = result.scalars().first()
+    if not confirmation:
+        raise HTTPException(status_code=404, detail="No se encontró la confirmación o no pertenece al alumno")
+
+    file_path = os.path.join(UPLOAD_DIR_STUDENT, confirmation.evidence_student)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Archivo de evidencia no encontrado")
+
+    # Leer archivo encriptado
+    with open(file_path, "rb") as f:
+        encrypted_data = f.read()
+
+    # Desencriptar
+    try:
+        decrypted_data = cipher.decrypt(encrypted_data)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error al desencriptar la evidencia")
+
+    return decrypted_data, confirmation.evidence_student
