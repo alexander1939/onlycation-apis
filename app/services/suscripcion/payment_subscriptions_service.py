@@ -13,8 +13,7 @@ from app.schemas.suscripcion.benefit_schema import CreateBenefitRequest, UpdateB
 from datetime import datetime, timedelta
 from app.external.stripe_config import stripe
 from app.services.notifications.notification_service import create_welcome_notification, create_subscription_notification
-from app.services.externals.email_service import send_email
-from app.schemas.externals.email_schema import EmailSchema
+from app.services.notifications.subscription_email_service import send_subscription_confirmation_email
 
 async def get_active_status(db: AsyncSession):
     """Obtiene el status activo"""
@@ -190,14 +189,14 @@ async def process_successful_payment(db: AsyncSession, session):
         print(f"💾 DEBUG: Procesando pago para user_id: {user_id}, plan_id: {plan_id}")
         print(f"💾 DEBUG: session_id: {session_id}")
 
-        # VERIFICAR SI YA EXISTE UNA SUSCRIPCIÓN CON ESTE SESSION_ID
-        existing_payment_result = await db.execute(
-            select(PaymentSubscription).where(
-                PaymentSubscription.stripe_payment_intent_id == session_id
-            )
+        # Validaciones de duplicados
+        from app.services.suscripcion.subscription_validation_service import (
+            check_existing_payment_by_session,
+            check_active_subscription_for_plan
         )
-        existing_payment = existing_payment_result.scalars().first()
         
+        # Verificar si ya existe un pago con este session_id
+        existing_payment = await check_existing_payment_by_session(db, session_id)
         if existing_payment:
             print(f"⚠️ DEBUG: Ya existe un PaymentSubscription con session_id: {session_id}")
             return {
@@ -206,23 +205,8 @@ async def process_successful_payment(db: AsyncSession, session):
                 "payment_status": "active"
             }
 
-        # VERIFICAR SI YA TIENE UNA SUSCRIPCIÓN ACTIVA AL MISMO PLAN
-        from datetime import datetime
-        now = datetime.utcnow()
-        
-        existing_subscription_result = await db.execute(
-            select(Subscription)
-            .options(joinedload(Subscription.plan))
-            .join(Status)
-            .where(
-                Subscription.user_id == user_id,
-                Subscription.plan_id == plan_id,
-                Status.name == "active",
-                Subscription.end_date > now
-            )
-        )
-        existing_subscription = existing_subscription_result.scalars().first()
-        
+        # Verificar si ya tiene una suscripción activa al mismo plan
+        existing_subscription = await check_active_subscription_for_plan(db, user_id, plan_id)
         if existing_subscription:
             print(f"⚠️ DEBUG: Usuario {user_id} ya tiene suscripción activa al plan {plan_id}")
             return {
@@ -293,7 +277,7 @@ async def process_successful_payment(db: AsyncSession, session):
             await create_subscription_notification(db, user, plan.name)
             
             # Enviar email de confirmación de suscripción
-            await send_subscription_email(user, plan)
+            await send_subscription_confirmation_email(user, plan)
             
             print(f"✅ Notificaciones y email enviados para usuario {user_id}")
         except Exception as e:
@@ -305,69 +289,6 @@ async def process_successful_payment(db: AsyncSession, session):
         print("ERROR:", e)
         traceback.print_exc()
         raise e
-async def send_subscription_email(user: User, plan: Plan):
-    """Envía email de confirmación de suscripción"""
-    try:
-        # Crear template HTML para el email
-        email_body = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background-color: #4CAF50; color: white; padding: 20px; text-align: center;">
-                <h1>¡Suscripción Confirmada! 🎉</h1>
-            </div>
-            
-            <div style="padding: 20px;">
-                <h2>Hola {user.first_name} {user.last_name},</h2>
-                
-                <p>¡Excelente noticia! Tu suscripción al <strong>{plan.name}</strong> ha sido confirmada exitosamente.</p>
-                
-                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                    <h3>Detalles de tu suscripción:</h3>
-                    <ul>
-                        <li><strong>Plan:</strong> {plan.name}</li>
-                        <li><strong>Precio:</strong> ${plan.price} MXN</li>
-                        <li><strong>Estado:</strong> Activa</li>
-                        <li><strong>Fecha de inicio:</strong> {datetime.utcnow().strftime('%d/%m/%Y')}</li>
-                    </ul>
-                </div>
-                
-                <p>Ahora puedes disfrutar de todos los beneficios de tu plan premium:</p>
-                <ul>
-                    <li>✅ Acceso completo a la plataforma</li>
-                    <li>✅ Funciones avanzadas</li>
-                    <li>✅ Soporte prioritario</li>
-                </ul>
-                
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="#" style="background-color: #4CAF50; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px;">
-                        Acceder a mi cuenta
-                    </a>
-                </div>
-                
-                <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
-                
-                <p>¡Gracias por confiar en OnlyCation!</p>
-                
-                <hr style="margin: 30px 0;">
-                <p style="color: #666; font-size: 12px;">
-                    Este es un email automático, por favor no respondas a este mensaje.
-                </p>
-            </div>
-        </body>
-        </html>
-        """
-        
-        email_data = EmailSchema(
-            email=user.email,
-            subject=f"✅ Suscripción confirmada - {plan.name}",
-            body=email_body
-        )
-        
-        await send_email(email_data)
-        print(f"📧 Email de suscripción enviado a {user.email}")
-        
-    except Exception as e:
-        print(f"❌ Error enviando email de suscripción: {str(e)}")
 
 async def subscribe_user_to_plan(db: AsyncSession, user: User, plan_guy: str):
     """
@@ -383,42 +304,9 @@ async def subscribe_user_to_plan(db: AsyncSession, user: User, plan_guy: str):
         if not plan:
             raise HTTPException(status_code=404, detail="Plan no encontrado o inactivo")
 
-        # Verificar suscripción activa del usuario
-        try:
-            current_subscription_result = await db.execute(
-                select(Subscription)
-                .options(joinedload(Subscription.plan))
-                .join(Status)
-                .where(
-                    Subscription.user_id == user.id,
-                    Status.name == "active"
-                )
-                .order_by(Subscription.start_date.desc())
-            )
-            current_subscription = current_subscription_result.scalars().first()
-            
-            if current_subscription:
-                # Verificar si la suscripción actual ha expirado
-                from datetime import datetime
-                now = datetime.utcnow()
-                
-                # Si ya tiene el mismo plan Y está activo Y no ha expirado, no permitir duplicado
-                if (current_subscription.plan.guy == plan_guy and 
-                    current_subscription.end_date > now):
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Ya tienes una suscripción activa al plan {current_subscription.plan.name} que expira el {current_subscription.end_date.strftime('%Y-%m-%d')}"
-                    )
-                
-                # Si tiene plan gratuito y quiere premium, permitir agregar nueva suscripción
-                if current_subscription.plan.name == "Plan Gratuito" and plan.name != "Plan Gratuito":
-                    # Mantener plan gratuito activo, agregar nueva suscripción premium
-                    # Cuando expire el premium, automáticamente volverá al gratuito
-                    pass
-                    
-        except Exception as e:
-            # Si no hay suscripción activa, continuar normalmente
-            pass
+        # Validar elegibilidad para suscripción
+        from app.services.suscripcion.subscription_validation_service import validate_subscription_eligibility
+        plan = await validate_subscription_eligibility(db, user.id, plan_guy)
 
         # Verificar que el plan tiene stripe_price_id configurado
         if not plan.stripe_price_id:
