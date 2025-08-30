@@ -12,6 +12,7 @@ from app.models.teachers.availability import Availability
 from app.models.common.status import Status
 from app.models.users.user import User
 from app.services.utils.pagination_service import PaginationService
+from app.services.notifications.booking_notification_service import send_reschedule_request_notification
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,12 @@ async def create_teacher_reschedule_request(
         
         logger.info(f"✅ Solicitud de reagendado creada por docente {teacher_id} para reserva {booking_id}")
         
-        # TODO: Enviar notificación al estudiante
+        # Obtener student_id antes del commit para evitar problemas de sesión
+        student_id = booking.user_id
+        
+        # Enviar notificación al estudiante
+        reschedule_details = {}
+        await send_reschedule_request_notification(db, student_id, reschedule_details)
         
         return {
             "request_id": reschedule_request.id,

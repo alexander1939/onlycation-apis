@@ -10,7 +10,10 @@ from app.models.booking.reschedule_request import RescheduleRequest
 from app.models.booking.bookings import Booking
 from app.models.common.status import Status
 from app.services.utils.pagination_service import PaginationService
-
+from app.services.notifications.booking_notification_service import (
+    send_reschedule_response_notification,
+    send_booking_rescheduled_notification
+)
 logger = logging.getLogger(__name__)
 
 async def get_student_reschedule_requests(
@@ -195,7 +198,21 @@ async def respond_to_reschedule_request(
         await db.commit()
         await db.refresh(request)
         
-        # TODO: Enviar notificación al docente
+        # Obtener IDs antes del commit para evitar problemas de sesión
+        teacher_id = request.teacher_id
+        student_id = request.student_id
+        
+        # Enviar notificación al docente sobre la respuesta
+        response_details = {
+            'approved': approved
+        }
+        await send_reschedule_response_notification(db, teacher_id, response_details)
+        
+        # Si fue aprobado, enviar notificación de reagendado a ambos usuarios
+        if approved:
+            notification_details = {}
+            await send_booking_rescheduled_notification(db, student_id, notification_details)
+            await send_booking_rescheduled_notification(db, teacher_id, notification_details)
         
         # Obtener el nombre del status actualizado
         final_status_result = await db.execute(select(Status).where(Status.id == request.status_id))

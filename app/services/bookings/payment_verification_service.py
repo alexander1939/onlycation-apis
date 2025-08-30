@@ -8,8 +8,13 @@ from app.models.booking.bookings import Booking
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.confirmation import Confirmation
 from app.models.common.status import Status
+from app.models.users.user import User
 from app.external.stripe_config import stripe
-from app.services.notifications.notification_service import create_booking_payment_notification, create_teacher_booking_notification
+from app.services.notifications.booking_notification_service import (
+    send_booking_confirmation_to_student,
+    send_booking_notification_to_teacher,
+    send_payment_confirmation_notification
+)
 from app.services.bookings.room_service import generate_secure_room_link
 
 async def get_active_status(db: AsyncSession):
@@ -70,6 +75,12 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
     )
     booking = booking_result.scalar_one()
 
+    # Obtener datos del usuario (estudiante) para las notificaciones
+    user_result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = user_result.scalar_one()
+
     # Obtener datos de comisión desde metadata
     commission_rate = float(session.metadata.get("commission_rate", "60.00"))
     commission_amount = int(session.metadata.get("commission_amount", "0"))
@@ -106,16 +117,28 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
         payment_booking_id=payment_booking.id
     )
     db.add(confirmation)
-    await create_booking_payment_notification(db, user_id, payment_booking.id)
+    booking_details = {
+        'booking_id': booking.id,
+        'date': booking.start_time.strftime('%d/%m/%Y %H:%M'),
+        'student_name': f"{user.first_name} {user.last_name}"
+    }
     
-    # Crear notificación para el profesor
-    await create_teacher_booking_notification(
-        db,
-        teacher_id=booking.availability.user_id,
-        booking_id=booking.id,
-        start_time=start_time,
-        end_time=end_time
-    )
+    payment_details = {
+        'payment_id': payment_booking.id,
+        'amount': payment_booking.total_amount
+    }
+    
+    # Obtener teacher_id antes del commit para evitar problemas de sesión
+    teacher_id = booking.availability.user_id
+    
+    # Notificar al estudiante sobre confirmación de reserva
+    await send_booking_confirmation_to_student(db, user_id, booking_details)
+    
+    # Notificar al estudiante sobre confirmación de pago
+    await send_payment_confirmation_notification(db, user_id, payment_details)
+    
+    # Notificar al docente sobre nueva reserva
+    await send_booking_notification_to_teacher(db, teacher_id, booking_details)
 
     await db.commit()
 

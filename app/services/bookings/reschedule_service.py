@@ -10,6 +10,7 @@ from app.models.booking.bookings import Booking
 from app.models.teachers.availability import Availability
 from app.models.booking.confirmation import Confirmation
 from app.models.booking.payment_bookings import PaymentBooking
+from app.services.notifications.booking_notification_service import send_booking_rescheduled_notification
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,9 @@ async def reschedule_booking(
         if conflicting_booking:
             raise HTTPException(status_code=409, detail="Ya existe una reserva en el nuevo horario solicitado")
         
+        # Obtener IDs antes del commit para evitar problemas de sesión
+        teacher_id = booking.availability.user_id
+        
         # Actualizar la reserva
         booking.availability_id = new_availability_id
         booking.start_time = new_start_time
@@ -111,6 +115,11 @@ async def reschedule_booking(
         await db.refresh(booking)
         
         logger.info(f"✅ Reserva {booking_id} reagendada exitosamente para el estudiante {student_id}")
+        
+        # Enviar notificaciones de reagendado a ambos usuarios
+        notification_details = {}
+        await send_booking_rescheduled_notification(db, student_id, notification_details)
+        await send_booking_rescheduled_notification(db, teacher_id, notification_details)
         
         return {
             "booking_id": booking.id,
