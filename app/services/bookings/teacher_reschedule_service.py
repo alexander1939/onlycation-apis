@@ -82,6 +82,35 @@ async def create_teacher_reschedule_request(
         if not (new_availability.start_time <= new_start_time and new_end_time <= new_availability.end_time):
             raise HTTPException(status_code=400, detail="El nuevo horario no está dentro de tu disponibilidad")
         
+        # 5.1. VALIDAR: El horario debe ser en horas exactas (ej: 9:00, no 9:30)
+        if new_start_time.minute != 0 or new_start_time.second != 0:
+            raise HTTPException(
+                status_code=400,
+                detail="El horario de inicio debe ser en hora exacta (ej: 9:00, 10:00, no 9:30)"
+            )
+        
+        if new_end_time.minute != 0 or new_end_time.second != 0:
+            raise HTTPException(
+                status_code=400,
+                detail="El horario de fin debe ser en hora exacta (ej: 10:00, 11:00, no 10:30)"
+            )
+        
+        # 5.2. VALIDAR: La hora de fin no puede ser antes que la de inicio
+        if new_end_time <= new_start_time:
+            raise HTTPException(
+                status_code=400,
+                detail="La hora de fin debe ser después de la hora de inicio"
+            )
+        
+        
+        # 5.4. VALIDAR: No se puede solicitar reagendar a una hora que ya pasó
+        current_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)  # Mexico time
+        if new_start_time <= current_time:
+            raise HTTPException(
+                status_code=400, 
+                detail="No puedes solicitar reagendar a una hora que ya pasó. El nuevo horario debe ser en el futuro."
+            )
+        
         # 6. Verificar que no haya conflictos con otras reservas en el nuevo horario
         conflict_query = select(Booking).where(
             Booking.availability_id == new_availability_id,
@@ -98,7 +127,6 @@ async def create_teacher_reschedule_request(
             raise HTTPException(status_code=409, detail="Ya existe una reserva en el nuevo horario solicitado")
         
         # 7. Verificar que la clase actual no haya comenzado
-        current_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)  # Mexico time
         if current_time >= booking.start_time:
             raise HTTPException(status_code=400, detail="No puedes solicitar reagendar una clase que ya comenzó o terminó")
         
@@ -126,8 +154,12 @@ async def create_teacher_reschedule_request(
         
         logger.info(f"✅ Solicitud de reagendado creada por docente {teacher_id} para reserva {booking_id}")
         
-        # Obtener student_id antes del commit para evitar problemas de sesión
+        # Obtener datos necesarios antes del commit para evitar problemas de sesión
         student_id = booking.user_id
+        teacher_name = f"{booking.availability.user.first_name} {booking.availability.user.last_name}"
+        student_name = f"{booking.user.first_name} {booking.user.last_name}"
+        current_start_time = booking.start_time
+        current_end_time = booking.end_time
         
         # Enviar notificación al estudiante
         reschedule_details = {}
@@ -135,9 +167,9 @@ async def create_teacher_reschedule_request(
         
         # Enviar email con información detallada
         email_details = {
-            'teacher_name': f"{booking.availability.user.first_name} {booking.availability.user.last_name}",
-            'current_start_date': booking.start_time.strftime('%d/%m/%Y %H:%M'),
-            'current_end_date': booking.end_time.strftime('%d/%m/%Y %H:%M'),
+            'teacher_name': teacher_name,
+            'current_start_date': current_start_time.strftime('%d/%m/%Y %H:%M'),
+            'current_end_date': current_end_time.strftime('%d/%m/%Y %H:%M'),
             'new_start_date': new_start_time.strftime('%d/%m/%Y %H:%M'),
             'new_end_date': new_end_time.strftime('%d/%m/%Y %H:%M'),
             'reason': reason
@@ -147,8 +179,8 @@ async def create_teacher_reschedule_request(
         return {
             "request_id": reschedule_request.id,
             "booking_id": booking_id,
-            "student_name": f"{booking.user.first_name} {booking.user.last_name}",
-            "current_time": booking.start_time.isoformat(),
+            "student_name": student_name,
+            "current_time": current_start_time.isoformat(),
             "new_time": new_start_time.isoformat(),
             "expires_at": expires_at.isoformat(),
             "status": "pending"

@@ -104,7 +104,8 @@ async def respond_to_reschedule_request(
         # 1. Obtener la solicitud de reagendado
         query = select(RescheduleRequest).options(
             selectinload(RescheduleRequest.booking),
-            selectinload(RescheduleRequest.teacher)
+            selectinload(RescheduleRequest.teacher),
+            selectinload(RescheduleRequest.student)
         ).where(
             RescheduleRequest.id == request_id,
             RescheduleRequest.student_id == student_id
@@ -141,6 +142,75 @@ async def respond_to_reschedule_request(
         
         # 4. Si es aprobada, realizar el reagendado
         if approved:
+            # VALIDAR: El horario debe ser en horas exactas (ej: 9:00, no 9:30)
+            if request.new_start_time.minute != 0 or request.new_start_time.second != 0:
+                # Marcar como expirada por validación fallida
+                expired_status_result = await db.execute(select(Status).where(Status.name == "expired"))
+                expired_status = expired_status_result.scalar_one_or_none()
+                if expired_status:
+                    request.status_id = expired_status.id
+                else:
+                    request.status = "expired"
+                request.student_response = "Horario inválido - debe ser en hora exacta"
+                request.responded_at = datetime.utcnow()
+                await db.commit()
+                raise HTTPException(
+                    status_code=400,
+                    detail="El horario de inicio debe ser en hora exacta (ej: 9:00, 10:00, no 9:30)"
+                )
+            
+            if request.new_end_time.minute != 0 or request.new_end_time.second != 0:
+                # Marcar como expirada por validación fallida
+                expired_status_result = await db.execute(select(Status).where(Status.name == "expired"))
+                expired_status = expired_status_result.scalar_one_or_none()
+                if expired_status:
+                    request.status_id = expired_status.id
+                else:
+                    request.status = "expired"
+                request.student_response = "Horario inválido - debe ser en hora exacta"
+                request.responded_at = datetime.utcnow()
+                await db.commit()
+                raise HTTPException(
+                    status_code=400,
+                    detail="El horario de fin debe ser en hora exacta (ej: 10:00, 11:00, no 10:30)"
+                )
+            
+            # VALIDAR: La hora de fin no puede ser antes que la de inicio
+            if request.new_end_time <= request.new_start_time:
+                # Marcar como expirada por validación fallida
+                expired_status_result = await db.execute(select(Status).where(Status.name == "expired"))
+                expired_status = expired_status_result.scalar_one_or_none()
+                if expired_status:
+                    request.status_id = expired_status.id
+                else:
+                    request.status = "expired"
+                request.student_response = "Horario inválido - hora de fin antes que inicio"
+                request.responded_at = datetime.utcnow()
+                await db.commit()
+                raise HTTPException(
+                    status_code=400,
+                    detail="La hora de fin debe ser después de la hora de inicio"
+                )
+            
+            
+            # VALIDAR: No se puede aprobar reagendado a una hora que ya pasó
+            current_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)  # Mexico time
+            if request.new_start_time <= current_time:
+                # Marcar como expirada por validación fallida
+                expired_status_result = await db.execute(select(Status).where(Status.name == "expired"))
+                expired_status = expired_status_result.scalar_one_or_none()
+                if expired_status:
+                    request.status_id = expired_status.id
+                else:
+                    request.status = "expired"
+                request.student_response = "Horario inválido - ya pasó la hora solicitada"
+                request.responded_at = datetime.utcnow()
+                await db.commit()
+                raise HTTPException(
+                    status_code=400,
+                    detail="No puedes aprobar un reagendado a una hora que ya pasó"
+                )
+            
             # Verificar que no haya conflictos en el nuevo horario (por si acaso)
             cancelled_status_result = await db.execute(select(Status).where(Status.name == "cancelled"))
             cancelled_status = cancelled_status_result.scalar_one_or_none()
@@ -199,12 +269,16 @@ async def respond_to_reschedule_request(
         request.student_response = response_message
         request.responded_at = datetime.utcnow()
         
-        await db.commit()
-        await db.refresh(request)
-        
-        # Obtener IDs antes del commit para evitar problemas de sesión
+        # Obtener datos necesarios antes del commit para evitar problemas de sesión
         teacher_id = request.teacher_id
         student_id = request.student_id
+        teacher_name = f"{request.teacher.first_name} {request.teacher.last_name}"
+        student_name = f"{request.student.first_name} {request.student.last_name}" if hasattr(request, 'student') and request.student else "Estudiante"
+        booking_old_start = request.booking.start_time if approved else None
+        booking_old_end = request.booking.end_time if approved else None
+        
+        await db.commit()
+        await db.refresh(request)
         
         # Enviar notificación al docente sobre la respuesta
         response_details = {
@@ -215,7 +289,7 @@ async def respond_to_reschedule_request(
         # Enviar email al docente con información detallada
         email_response_details = {
             'approved': approved,
-            'student_name': f"{request.student.first_name} {request.student.last_name}",
+            'student_name': student_name,
             'response_message': response_message
         }
         await send_reschedule_response_email(db, teacher_id, email_response_details)
@@ -229,8 +303,8 @@ async def respond_to_reschedule_request(
             # Enviar emails de reagendado exitoso con detalles
             email_reschedule_details = {
                 'booking_id': request.booking_id,
-                'old_start_date': request.booking.start_time.strftime('%d/%m/%Y %H:%M'),
-                'old_end_date': request.booking.end_time.strftime('%d/%m/%Y %H:%M'),
+                'old_start_date': booking_old_start.strftime('%d/%m/%Y %H:%M') if booking_old_start else 'N/A',
+                'old_end_date': booking_old_end.strftime('%d/%m/%Y %H:%M') if booking_old_end else 'N/A',
                 'new_start_date': request.new_start_time.strftime('%d/%m/%Y %H:%M'),
                 'new_end_date': request.new_end_time.strftime('%d/%m/%Y %H:%M')
             }
@@ -246,7 +320,7 @@ async def respond_to_reschedule_request(
             "request_id": request.id,
             "booking_id": request.booking_id,
             "status": status_name,
-            "teacher_name": f"{request.teacher.first_name} {request.teacher.last_name}",
+            "teacher_name": teacher_name,
             "new_start_time": request.new_start_time.isoformat() if approved else None,
             "message": "Reagendado aprobado exitosamente" if approved else "Reagendado rechazado"
         }

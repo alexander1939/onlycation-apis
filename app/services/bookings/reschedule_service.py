@@ -82,6 +82,41 @@ async def reschedule_booking(
         if not (new_availability.start_time <= new_start_time and new_end_time <= new_availability.end_time):
             raise HTTPException(status_code=400, detail="El nuevo horario no está dentro de la disponibilidad del docente")
         
+        # VALIDAR: El horario debe ser en horas exactas (ej: 9:00, no 9:30)
+        if new_start_time.minute != 0 or new_start_time.second != 0:
+            raise HTTPException(
+                status_code=400,
+                detail="El horario de inicio debe ser en hora exacta (ej: 9:00, 10:00, no 9:30)"
+            )
+        
+        if new_end_time.minute != 0 or new_end_time.second != 0:
+            raise HTTPException(
+                status_code=400,
+                detail="El horario de fin debe ser en hora exacta (ej: 10:00, 11:00, no 10:30)"
+            )
+        
+        # VALIDAR: La hora de fin no puede ser antes que la de inicio
+        if new_end_time <= new_start_time:
+            raise HTTPException(
+                status_code=400,
+                detail="La hora de fin debe ser después de la hora de inicio"
+            )
+        
+        
+        # VALIDAR: No se puede reagendar a una hora que ya pasó
+        if new_start_time <= current_time:
+            raise HTTPException(
+                status_code=400, 
+                detail="No puedes reagendar a una hora que ya pasó. El nuevo horario debe ser en el futuro."
+            )
+        
+        # VALIDAR: Solo se puede reagendar para después del horario actual de la reserva
+        if new_start_time < booking.end_time:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Solo puedes reagendar para después de tu reserva actual. Tu clase termina a las {booking.end_time.strftime('%H:%M')} del {booking.end_time.strftime('%d/%m/%Y')}. Reagenda para después de esa hora."
+            )
+        
         # Verificar que no haya conflictos con otras reservas en el nuevo horario
         # Obtener el ID del status 'cancelled'
         from app.models.common.status import Status
@@ -103,8 +138,11 @@ async def reschedule_booking(
         if conflicting_booking:
             raise HTTPException(status_code=409, detail="Ya existe una reserva en el nuevo horario solicitado")
         
-        # Obtener IDs antes del commit para evitar problemas de sesión
+        # Obtener datos necesarios antes del commit para evitar problemas de sesión
         teacher_id = booking.availability.user_id
+        teacher_name = f"{booking.availability.user.first_name} {booking.availability.user.last_name}"
+        old_start_time = booking.start_time
+        old_end_time = booking.end_time
         
         # Actualizar la reserva
         booking.availability_id = new_availability_id
@@ -125,8 +163,8 @@ async def reschedule_booking(
         # Enviar emails con información detallada
         email_details = {
             'booking_id': booking.id,
-            'old_start_date': booking.start_time.strftime('%d/%m/%Y %H:%M'),
-            'old_end_date': booking.end_time.strftime('%d/%m/%Y %H:%M'),
+            'old_start_date': old_start_time.strftime('%d/%m/%Y %H:%M'),
+            'old_end_date': old_end_time.strftime('%d/%m/%Y %H:%M'),
             'new_start_date': new_start_time.strftime('%d/%m/%Y %H:%M'),
             'new_end_date': new_end_time.strftime('%d/%m/%Y %H:%M')
         }
@@ -135,11 +173,11 @@ async def reschedule_booking(
         
         return {
             "booking_id": booking.id,
-            "old_start_time": booking.start_time.isoformat(),
-            "old_end_time": booking.end_time.isoformat(),
+            "old_start_time": old_start_time.isoformat(),
+            "old_end_time": old_end_time.isoformat(),
             "new_start_time": new_start_time.isoformat(),
             "new_end_time": new_end_time.isoformat(),
-            "teacher_name": f"{booking.availability.user.first_name} {booking.availability.user.last_name}",
+            "teacher_name": teacher_name,
             "updated_at": booking.updated_at.isoformat()
         }
         
