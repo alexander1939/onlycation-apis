@@ -1,6 +1,7 @@
 # Carpeta del entorno virtual (no debe subirse)
 .venv/
 venv/
+./evidence
 
 alembic.ini
 

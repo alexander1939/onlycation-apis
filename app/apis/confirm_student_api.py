@@ -21,10 +21,11 @@ from app.services.students.confirm_students_service import get_student_evidence
 security = HTTPBearer()
 router = APIRouter()
 
-@router.post("/student/",
+@router.post("/student/{payment_booking_id}",
             response_model=StudentConfirmationCreateResponse,
             dependencies=[Depends(auth_required)])
 async def confirm_student(
+    payment_booking_id: int,
     confirmation: bool = Form(...),          
     description_student: str = Form(...),   # 🔹 Nuevo campo obligatorio      
     evidence_file: UploadFile = File(...),
@@ -37,7 +38,7 @@ async def confirm_student(
         db=db,
         token=token,
         confirmation_value=confirmation,
-        payment_booking_id=1,   
+        payment_booking_id=payment_booking_id,   
         evidence_file=evidence_file,
         description_student=description_student   # 🔹 Se pasa al service
     )

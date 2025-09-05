@@ -7,8 +7,14 @@ import os
 import shutil
 import uuid
 
+import pytz 
+
 from cryptography.fernet import Fernet
 from decouple import config
+
+from datetime import datetime, timedelta, timezone
+from app.models.booking.payment_bookings import PaymentBooking
+from app.models.booking.bookings import Booking 
 
 from app.models.booking.confirmation import Confirmation
 from app.models.users.user import User
@@ -49,20 +55,71 @@ async def create_confirmation_by_teacher(
     teacher_id = await get_teacher_id_from_token(token)
     await _validate_teacher_exists(db, teacher_id)
 
-    # Buscar confirmación existente
+    # Buscar PaymentBooking
     result = await db.execute(
+        select(PaymentBooking, Booking)
+        .join(Booking, Booking.id == PaymentBooking.booking_id)
+        .where(PaymentBooking.id == payment_booking_id)
+    )
+    payment_booking, booking = result.first()
+    if not payment_booking:
+        raise HTTPException(status_code=404, detail="El PaymentBooking no existe")
+
+    booking = payment_booking.booking
+    if not booking:
+        raise HTTPException(status_code=404, detail="No se encontró el Booking asociado")
+
+    # 🚨 Validar si el docente ya confirmó antes este booking
+    existing_confirmation = await db.execute(
         select(Confirmation).where(
+            Confirmation.teacher_id == teacher_id,
             Confirmation.payment_booking_id == payment_booking_id
         )
     )
-    existing_confirmation = result.scalars().first()
-    if existing_confirmation:
+    if existing_confirmation.scalar_one_or_none():
         raise HTTPException(
             status_code=400,
-            detail="Ya existe una confirmación para este paymentbooking."
+            detail="Ya realizaste una confirmación para esta clase. Solo se permite una por docente."
         )
 
-    # Validar que realmente se subió un archivo
+    # Validar ventana de confirmación: solo 5 min después del end_time
+        # 🚨 Validar ventana de confirmación
+    now = datetime.now(timezone.utc)
+    cdmx_tz = pytz.timezone("America/Mexico_City")
+
+    # Normalizar fechas con tz
+    if booking.start_time.tzinfo is None:
+        booking_start = cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
+    else:
+        booking_start = booking.start_time.astimezone(timezone.utc)
+
+    if booking.end_time.tzinfo is None:
+        booking_end = cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
+    else:
+        booking_end = booking.end_time.astimezone(timezone.utc)
+    
+
+    start_window = booking_end
+    end_window = booking_end + timedelta(minutes=5)
+
+    # 🚨 Validaciones
+    if now < booking_start:
+        raise HTTPException(
+            status_code=400,
+            detail="La clase aún no ha comenzado."
+        )
+    if booking_start <= now < booking_end:
+        raise HTTPException(
+            status_code=400,
+            detail="Aún no puedes confirmar. Debes esperar a que termine la clase."
+        )
+    if now > end_window:
+        raise HTTPException(
+            status_code=400,
+            detail="El tiempo de confirmación expiró."
+        )
+
+    # Validar archivo obligatorio
     if not evidence_file or not evidence_file.filename:
         raise HTTPException(
             status_code=400,
@@ -81,23 +138,19 @@ async def create_confirmation_by_teacher(
     unique_name = f"{uuid.uuid4().hex}{ext}" 
     file_path = os.path.join(UPLOAD_DIR_TEACHER, unique_name)
 
-    # Leer bytes del archivo
     file_bytes = await evidence_file.read()
-
-    # Encriptar los bytes
     encrypted_data = cipher.encrypt(file_bytes)
 
-    # Guardar en disco como encriptado
     with open(file_path, "wb") as f:
         f.write(encrypted_data)
 
-    # Crear confirmación con evidencia obligatoria
+    # Crear confirmación
     confirmation = Confirmation(
         teacher_id=teacher_id,
         student_id=student_id,
         payment_booking_id=payment_booking_id,
         confirmation_date_teacher=confirmation_value,
-        evidence_teacher=unique_name,  # guardamos el nombre .enc
+        evidence_teacher=unique_name,
         description_teacher=description_teacher
     )
 
@@ -107,7 +160,11 @@ async def create_confirmation_by_teacher(
 
     return confirmation
 
-async def get_teacher_evidence(db: AsyncSession, token: str, confirmation_id: int):
+async def get_teacher_evidence(
+    db: AsyncSession,
+    token: str,
+    confirmation_id: int
+) -> tuple[bytes, str]:
     teacher_id = await get_teacher_id_from_token(token)
 
     # Buscar la confirmación
@@ -117,22 +174,32 @@ async def get_teacher_evidence(db: AsyncSession, token: str, confirmation_id: in
             Confirmation.teacher_id == teacher_id
         )
     )
-    confirmation = result.scalars().first()
+    confirmation = result.scalar_one_or_none()
     if not confirmation:
-        raise HTTPException(status_code=404, detail="No se encontró la confirmación o no pertenece al docente")
+        raise HTTPException(
+            status_code=404,
+            detail="No se encontró la confirmación o no tienes acceso a ella"
+        )
 
-    file_path = os.path.join(UPLOAD_DIR_TEACHER, confirmation.evidence_teacher)
+    filename = confirmation.evidence_teacher
+    file_path = os.path.join(UPLOAD_DIR_TEACHER, filename)
+
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Archivo de evidencia no encontrado")
+        raise HTTPException(
+            status_code=404,
+            detail="El archivo de evidencia no existe en el servidor"
+        )
 
-    # Leer archivo encriptado
+    # Leer archivo encriptado y desencriptar
     with open(file_path, "rb") as f:
         encrypted_data = f.read()
 
-    # Desencriptar
     try:
-        decrypted_data = cipher.decrypt(encrypted_data)
+        evidence_bytes = cipher.decrypt(encrypted_data)
     except Exception:
-        raise HTTPException(status_code=500, detail="Error al desencriptar la evidencia")
+        raise HTTPException(
+            status_code=500,
+            detail="Error al desencriptar la evidencia"
+        )
 
-    return decrypted_data, confirmation.evidence_teacher
+    return evidence_bytes, filename

@@ -17,8 +17,9 @@ from app.services.teachers.confirm_teacher_service import get_teacher_evidence
 security = HTTPBearer()
 router = APIRouter()
 
-@router.post("/teacher/", response_model=ConfirmationCreateResponse, dependencies=[Depends(auth_required)])
+@router.post("/teacher/{payment_booking_id}", response_model=ConfirmationCreateResponse, dependencies=[Depends(auth_required)])
 async def confirm_teacher(
+    payment_booking_id: int,
     confirmation: bool = Form(...),
     description_teacher: str = Form(...),   # 🔹 Nuevo campo obligatorio
     evidence_file: UploadFile = File(...),
@@ -33,7 +34,7 @@ async def confirm_teacher(
         token=token,
         confirmation_value=confirmation,
         student_id=0,       # si quieres puedes pasar dinámico desde el request
-        payment_booking_id=1,  # idem
+        payment_booking_id=payment_booking_id,  # idem
         evidence_file=evidence_file,
         description_teacher=description_teacher
     )
