@@ -76,6 +76,7 @@ from app.apis.wallet_api import router as wallet_router
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.apis.videos_api import router as videos_router
+from app.apis.chat_api import router as chat_router
 
 
 @asynccontextmanager
@@ -138,6 +139,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
+    app.include_router(videos_router, prefix="/api/videos", tags=["Videos"])
+    app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
     ##app.include_router()
 
     return app
