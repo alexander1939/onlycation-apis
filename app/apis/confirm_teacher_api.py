@@ -33,7 +33,7 @@ async def confirm_teacher(
         db=db,
         token=token,
         confirmation_value=confirmation,
-        student_id=0,       # si quieres puedes pasar dinámico desde el request
+        #student_id=0,       # si quieres puedes pasar dinámico desde el request
         payment_booking_id=payment_booking_id,  # idem
         evidence_file=evidence_file,
         description_teacher=description_teacher

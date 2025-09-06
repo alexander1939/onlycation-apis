@@ -47,7 +47,7 @@ async def create_confirmation_by_teacher(
     db: AsyncSession,
     token: str,
     confirmation_value: bool,
-    student_id: int,
+    #student_id: int,
     payment_booking_id: int,
     evidence_file: UploadFile,  # obligatorio
     description_teacher: str
@@ -64,6 +64,10 @@ async def create_confirmation_by_teacher(
     payment_booking, booking = result.first()
     if not payment_booking:
         raise HTTPException(status_code=404, detail="El PaymentBooking no existe")
+    
+    student_id = booking.user_id
+    if not student_id:
+        raise HTTPException(status_code=400, detail="El booking no tiene estudiante asignado")
 
     booking = payment_booking.booking
     if not booking:
@@ -143,6 +147,9 @@ async def create_confirmation_by_teacher(
 
     with open(file_path, "wb") as f:
         f.write(encrypted_data)
+
+
+
 
     # Crear confirmación
     confirmation = Confirmation(
