@@ -1,12 +1,13 @@
 from pydantic import BaseModel
 from typing import Optional, Dict
+from datetime import datetime
 
 class BookingRequest(BaseModel):
     availability_id: int
     price_id: int
-    start_time: str
-    end_time: str
-    total_hours: int  # <--- Nuevo campo
+    start_time: datetime
+    end_time: datetime
+    total_hours: int  
 
 class BookingPaymentResponse(BaseModel):
     success: bool
@@ -20,4 +21,15 @@ class VerifyBookingPaymentResponse(BaseModel):
     success: bool
     message: str
     payment_status: Optional[str] = None
+    data: Optional[Dict] = None
+
+class RescheduleBookingRequest(BaseModel):
+    booking_id: int
+    new_availability_id: int
+    new_start_time: datetime
+    new_end_time: datetime
+
+class RescheduleBookingResponse(BaseModel):
+    success: bool
+    message: str
     data: Optional[Dict] = None

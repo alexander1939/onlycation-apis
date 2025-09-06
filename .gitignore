@@ -4,7 +4,7 @@ venv/
 evidence/teacher
 evidence/student
 
-
+uploads/
 alembic.ini
 
 # Variables de entorno (datos sensibles)

@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime,Boolean, Text
 from sqlalchemy.orm import relationship
 from app.cores.db import Base
 from datetime import datetime
@@ -15,12 +16,17 @@ class Confirmation(Base):
     evidence_student = Column(String(255), nullable=True)
     evidence_teacher = Column(String(255), nullable=True)
 
+
     # 🔹 Nuevos campos de descripción
     description_student = Column(String(255), nullable=True)
     description_teacher = Column(String(255), nullable=True)
 
+
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    description_student = Column(Text, nullable=True) 
+    description_teacher = Column(Text, nullable=True)
 
     payment_booking = relationship("PaymentBooking", backref="confirmations")
     teacher = relationship("User", foreign_keys=[teacher_id], backref="teacher_confirmations")

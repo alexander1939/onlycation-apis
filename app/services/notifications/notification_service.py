@@ -64,16 +64,44 @@ async def create_subscription_notification(db: AsyncSession, user: User, plan_na
     Crea una notificación específica de suscripción
     """
     try:
-        # Crear notificación de suscripción
-        notification = Notification(
-            title=f"Suscripción activada - {plan_name}",
-            message=f"Tu suscripción al plan {plan_name} ha sido activada exitosamente. ¡Disfruta de todos los beneficios!",
-            type="subscription"
+        # Verificar si ya existe una notificación de suscripción para este usuario y plan
+        existing_user_notification = await db.execute(
+            select(User_notification)
+            .join(Notification)
+            .where(
+                User_notification.user_id == user.id,
+                Notification.title == f"Suscripción activada - {plan_name}",
+                Notification.type == "subscription"
+            )
         )
         
-        db.add(notification)
-        await db.commit()
-        await db.refresh(notification)
+        if existing_user_notification.scalar_one_or_none():
+            print(f"⚠️ Ya existe notificación de suscripción para usuario {user.id} y plan {plan_name}")
+            return {
+                "success": True,
+                "message": "Notificación de suscripción ya existe",
+                "data": None
+            }
+        
+        # Buscar si ya existe una notificación base para este plan
+        existing_notification = await db.execute(
+            select(Notification).where(
+                Notification.title == f"Suscripción activada - {plan_name}",
+                Notification.type == "subscription"
+            )
+        )
+        notification = existing_notification.scalar_one_or_none()
+        
+        # Si no existe, crear la notificación base
+        if not notification:
+            notification = Notification(
+                title=f"Suscripción activada - {plan_name}",
+                message=f"Tu suscripción al plan {plan_name} ha sido activada exitosamente. ¡Disfruta de todos los beneficios!",
+                type="subscription"
+            )
+            db.add(notification)
+            await db.commit()
+            await db.refresh(notification)
         
         # Asignar al usuario
         user_notification = User_notification(
@@ -99,6 +127,89 @@ async def create_subscription_notification(db: AsyncSession, user: User, plan_na
     except Exception as e:
         await db.rollback()
         await unexpected_exception()
+
+
+async def create_booking_payment_notification(db: AsyncSession, user_id: int, payment_booking_id: int):
+    """
+    Crea una notificación de confirmación de pago de reserva
+    solo si no existe previamente.
+    """
+    try:
+        # Verificar si ya existe una notificación para este pago
+        existing = await db.execute(
+            select(User_notification)
+            .join(Notification)
+            .where(
+                User_notification.user_id == user_id,
+                Notification.type == "booking_payment",
+            )
+        )
+        if existing.scalar_one_or_none():
+            return  # Ya existe, no creamos otra
+
+        # Crear la notificación base (solo una vez para este tipo+referencia)
+        notification = Notification(
+            title="Pago de reserva confirmado",
+            message="Tu pago para la reserva ha sido confirmado con éxito.",
+            type="booking_payment",
+        )
+        db.add(notification)
+        await db.flush()
+
+        # Asociar la notificación al usuario
+        user_notification = User_notification(
+            notification_id=notification.id,
+            user_id=user_id,
+            is_read=False
+        )
+        db.add(user_notification)
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+
+async def create_teacher_booking_notification(
+    db: AsyncSession, teacher_id: int, booking_id: int, start_time: datetime, end_time: datetime
+):
+    """
+    Crea una notificación para el profesor sobre una nueva reserva.
+    """
+    try:
+        # Verificar si ya existe una notificación para esta reserva
+        existing = await db.execute(
+            select(User_notification)
+            .join(Notification)
+            .where(
+                User_notification.user_id == teacher_id,
+                Notification.type == "new_booking",
+            )
+        )
+        if existing.scalar_one_or_none():
+            return  # Ya existe, no duplicar
+
+        # Crear la notificación base
+        notification = Notification(
+            title="Nueva reserva recibida",
+            message=f"Tienes una nueva reserva programada para el {start_time.strftime('%d/%m/%Y %H:%M')} hasta el {end_time.strftime('%d/%m/%Y %H:%M')}.",
+            type="new_booking",
+        )
+        db.add(notification)
+        await db.flush()
+
+        # Asociar la notificación al profesor
+        user_notification = User_notification(
+            notification_id=notification.id,
+            user_id=teacher_id,
+            is_read=False
+        )
+        db.add(user_notification)
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 async def get_user_notifications(db: AsyncSession, user_id: int, limit: int = 10):
     """
@@ -162,4 +273,44 @@ async def mark_notification_as_read(db: AsyncSession, user_id: int, notification
     except HTTPException as e:
         raise e
     except Exception as e:
-        await unexpected_exception() 
+        await unexpected_exception()
+
+async def create_notification(
+    db: AsyncSession,
+    user_id: int,
+    title: str,
+    message: str,
+    notification_type: str
+):
+    """
+    Crea una notificación genérica para un usuario
+    """
+    try:
+        # Crear la notificación base
+        notification = Notification(
+            title=title,
+            message=message,
+            type=notification_type
+        )
+        db.add(notification)
+        await db.flush()
+
+        # Asociar la notificación al usuario
+        user_notification = User_notification(
+            notification_id=notification.id,
+            user_id=user_id,
+            is_read=False
+        )
+        db.add(user_notification)
+
+        await db.commit()
+        
+        return {
+            "success": True,
+            "notification_id": notification.id,
+            "user_notification_id": user_notification.id
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        raise e 

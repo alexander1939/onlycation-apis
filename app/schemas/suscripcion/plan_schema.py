@@ -4,6 +4,7 @@ Modelo que representa la estructura de datos recibida y enviada en las APIs de p
 
 from pydantic import BaseModel
 from typing import Optional, List
+from datetime import datetime
 
 # Schema para crear un plan
 class CreatePlanRequest(BaseModel):
@@ -76,3 +77,21 @@ class GetPlanResponse(BaseModel):
     success: bool
     message: str
     data: PlanCompleteData 
+
+
+class SubscriptionData(BaseModel):
+    subscription_id: int
+    plan_id: int
+    plan_name: str
+    plan_description: Optional[str] = None
+    price: float
+    start_date: datetime
+    end_date: Optional[datetime] = None
+    status: str
+    days_left: Optional[int] = None
+
+# Schema para respuesta de "mi suscripción"
+class MySubscriptionResponse(BaseModel):
+    success: bool
+    message: str
+    data: SubscriptionData
