@@ -35,28 +35,19 @@ async def create_chat(
     Solo los estudiantes pueden crear chats con profesores.
     """
     try:
-        print(f"🔍 DEBUG: Usuario actual: {current_user}")
-        print(f"🔍 DEBUG: Request: {request}")
-        
         # Verificar que el usuario es estudiante
         if current_user["role"] != "student":
-            print(f"❌ DEBUG: Usuario no es estudiante, rol: {current_user['role']}")
             raise HTTPException(
                 status_code=403,
                 detail="❌ Solo los estudiantes pueden crear chats con profesores"
             )
         
-        print(f"✅ DEBUG: Usuario es estudiante")
-        
         # Verificar que el estudiante no está creando un chat consigo mismo
         if current_user["user_id"] == request.teacher_id:
-            print(f"❌ DEBUG: Estudiante intentando crear chat consigo mismo")
             raise HTTPException(
                 status_code=400,
                 detail="❌ No puedes crear un chat contigo mismo"
             )
-        
-        print(f"✅ DEBUG: Validaciones pasadas, creando chat...")
         
         # Crear el chat
         chat = await ChatService.create_chat(
@@ -65,31 +56,14 @@ async def create_chat(
             teacher_id=request.teacher_id
         )
         
-        print(f"✅ DEBUG: Chat creado exitosamente: {chat}")
-        
-        print(f"🔍 DEBUG: Validando ChatResponse...")
-        try:
-            response = ChatResponse.model_validate(chat)
-            print(f"✅ DEBUG: ChatResponse validado exitosamente: {response}")
-            return response
-        except Exception as validation_error:
-            print(f"❌ DEBUG: Error en ChatResponse.model_validate: {validation_error}")
-            print(f"❌ DEBUG: Tipo de error: {type(validation_error)}")
-            import traceback
-            print(f"❌ DEBUG: Traceback de validación: {traceback.format_exc()}")
-            raise
+        return ChatResponse.model_validate(chat)
         
     except HTTPException:
         # Re-lanzar HTTPException sin modificar (403, 400, etc.)
         raise
     except ValueError as e:
-        print(f"❌ DEBUG: ValueError: {str(e)}")
         raise HTTPException(status_code=400, detail=f"❌ {str(e)}")
     except Exception as e:
-        print(f"❌ DEBUG: Exception: {str(e)}")
-        print(f"❌ DEBUG: Exception type: {type(e)}")
-        import traceback
-        print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail="❌ Error interno al crear el chat. Por favor, intenta nuevamente."
@@ -113,7 +87,7 @@ async def get_my_chats(
         
         return ChatSummaryListResponse(
             success=True,
-            message=f"Se encontraron {len(summaries)} chat(s) en tu cuenta",
+            message=f"✅ {len(summaries)} chat(s) encontrado(s) en tu cuenta",
             data=summaries,
             total=len(summaries)
         )
@@ -208,7 +182,25 @@ async def send_message(
             content=request.content
         )
         
-        return MessageResponse.model_validate(message)
+        # Desencriptar el mensaje para la respuesta
+        decrypted_content = MessageService.decrypt_message_content(message, current_user["user_id"])
+        
+        # Crear diccionario con contenido desencriptado
+        message_data = {
+            "id": message.id,
+            "chat_id": message.chat_id,
+            "sender_id": message.sender_id,
+            "content": decrypted_content,  # Contenido desencriptado
+            "is_read": message.is_read,
+            "is_deleted": message.is_deleted,
+            "is_encrypted": message.is_encrypted,
+            "encryption_version": message.encryption_version,
+            "created_at": message.created_at,
+            "updated_at": message.updated_at
+        }
+        
+        response = MessageResponse.model_validate(message_data)
+        return response
         
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"❌ {str(e)}")
@@ -231,7 +223,8 @@ async def get_chat_messages(
     Obtiene los mensajes de un chat con paginación.
     """
     try:
-        messages = await MessageService.get_chat_messages(
+        # Obtener mensajes con contenido desencriptado
+        decrypted_messages = await MessageService.get_chat_messages_decrypted(
             db=db,
             chat_id=chat_id,
             user_id=current_user["user_id"],
@@ -239,12 +232,12 @@ async def get_chat_messages(
             offset=offset
         )
         
-        # Convertir a schema de respuesta
-        message_responses = [MessageResponse.model_validate(msg) for msg in messages]
+        # Convertir a schema de respuesta (ya están desencriptados)
+        message_responses = [MessageResponse.model_validate(msg) for msg in decrypted_messages]
         
         return MessageListResponse(
             success=True,
-            message=f"Se encontraron {len(message_responses)} mensaje(s) en el chat",
+            message=f"✅ {len(message_responses)} mensaje(s) cargado(s) correctamente",
             data=message_responses,
             total=len(message_responses),
             chat_id=chat_id

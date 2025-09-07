@@ -52,13 +52,16 @@ class MessageCreateRequest(MessageBase):
     chat_id: int = Field(..., description="ID del chat")
 
 
-class MessageResponse(MessageBase):
+class MessageResponse(BaseModel):
     """Esquema de respuesta para mensajes"""
     id: int
     chat_id: int
     sender_id: int
+    content: str = Field(..., description="Contenido del mensaje (desencriptado)")
     is_read: bool
     is_deleted: bool
+    is_encrypted: Optional[bool] = Field(None, description="Indica si el mensaje está encriptado")
+    encryption_version: Optional[str] = Field(None, description="Versión de encriptación")
     created_at: datetime
     updated_at: datetime
     

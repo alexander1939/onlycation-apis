@@ -6,6 +6,7 @@ from sqlalchemy import and_, desc, func
 from app.models.chat import Chat, Message
 from app.models.users.user import User
 from app.schemas.chat.chat_schema import MessageCreateRequest
+from app.services.encryption import EncryptionService
 
 
 class MessageService:
@@ -48,11 +49,20 @@ class MessageService:
         if chat.student_id != sender_id and chat.teacher_id != sender_id:
             raise ValueError("No eres participante de este chat")
         
+        # Encriptar el contenido del mensaje
+        try:
+            encrypted_content = EncryptionService.encrypt_message(content, sender_id)
+        except Exception as e:
+            raise ValueError(f"Error al encriptar mensaje: {str(e)}")
+        
         # Crear y enviar el mensaje
         new_message = Message(
             chat_id=chat_id,
             sender_id=sender_id,
-            content=content,
+            encrypted_content=encrypted_content,
+            # content NO se guarda por seguridad - solo encrypted_content
+            is_encrypted=True,
+            encryption_version="v1",
             is_read=False,
             is_deleted=False
         )
@@ -229,3 +239,96 @@ class MessageService:
         
         result = await db.execute(query)
         return result.scalar() or 0
+    
+    @staticmethod
+    def decrypt_message_content(message: Message, user_id: int) -> str:
+        """
+        Desencripta el contenido de un mensaje para un usuario específico.
+        
+        Args:
+            message: Objeto Message con contenido encriptado
+            user_id: ID del usuario que solicita la desencriptación
+            
+        Returns:
+            str: Contenido desencriptado del mensaje
+            
+        Raises:
+            ValueError: Si no se puede desencriptar el mensaje
+        """
+        if not message.is_encrypted:
+            # Si no está encriptado, devolver mensaje de error
+            return "[Mensaje no encriptado - posible error de seguridad]"
+        
+        try:
+            # Desencriptar usando la clave del remitente
+            decrypted_content = EncryptionService.decrypt_message(
+                message.encrypted_content, 
+                message.sender_id
+            )
+            return decrypted_content
+        except Exception as e:
+            raise ValueError(f"Error al desencriptar mensaje: {str(e)}")
+    
+    @staticmethod
+    async def get_chat_messages_decrypted(
+        db: AsyncSession,
+        chat_id: int,
+        user_id: int,
+        limit: int = 50,
+        offset: int = 0
+    ) -> List[dict]:
+        """
+        Obtiene los mensajes de un chat con contenido desencriptado.
+        
+        Args:
+            db: Sesión de base de datos
+            chat_id: ID del chat
+            user_id: ID del usuario que solicita los mensajes
+            limit: Número máximo de mensajes a retornar
+            offset: Número de mensajes a omitir
+            
+        Returns:
+            List[dict]: Lista de mensajes con contenido desencriptado
+            
+        Raises:
+            ValueError: Si el chat no existe o el usuario no es participante
+        """
+        # Obtener mensajes usando el método existente
+        messages = await MessageService.get_chat_messages(
+            db, chat_id, user_id, limit, offset
+        )
+        
+        # Desencriptar contenido de cada mensaje
+        decrypted_messages = []
+        for message in messages:
+            try:
+                decrypted_content = MessageService.decrypt_message_content(message, user_id)
+                decrypted_messages.append({
+                    "id": message.id,
+                    "chat_id": message.chat_id,
+                    "sender_id": message.sender_id,
+                    "content": decrypted_content,
+                    "is_read": message.is_read,
+                    "is_deleted": message.is_deleted,
+                    "is_encrypted": message.is_encrypted,
+                    "encryption_version": message.encryption_version,
+                    "created_at": message.created_at,
+                    "updated_at": message.updated_at
+                })
+            except ValueError as e:
+                # Si no se puede desencriptar, incluir mensaje de error
+                decrypted_messages.append({
+                    "id": message.id,
+                    "chat_id": message.chat_id,
+                    "sender_id": message.sender_id,
+                    "content": f"[Mensaje no disponible: {str(e)}]",
+                    "is_read": message.is_read,
+                    "is_deleted": message.is_deleted,
+                    "is_encrypted": message.is_encrypted,
+                    "encryption_version": message.encryption_version,
+                    "created_at": message.created_at,
+                    "updated_at": message.updated_at,
+                    "decryption_error": True
+                })
+        
+        return decrypted_messages

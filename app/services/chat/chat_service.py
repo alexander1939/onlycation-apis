@@ -31,33 +31,25 @@ class ChatService:
         Raises:
             ValueError: Si ya existe un chat activo entre estos usuarios
         """
-        print(f"🔍 DEBUG ChatService: Creando chat entre estudiante {student_id} y profesor {teacher_id}")
-        
         # Verificar que no exista un chat activo entre estos usuarios
         existing_chat = await ChatService.get_chat_between_users(
             db, student_id, teacher_id
         )
         
-        print(f"🔍 DEBUG ChatService: Chat existente: {existing_chat}")
-        
         if existing_chat and existing_chat.is_active:
-            print(f"❌ DEBUG ChatService: Ya existe un chat activo")
             raise ValueError(
                 f"Ya existe un chat activo entre el estudiante {student_id} y el profesor {teacher_id}"
             )
         
         # Si existe un chat inactivo, reactivarlo
         if existing_chat and not existing_chat.is_active:
-            print(f"✅ DEBUG ChatService: Reactivando chat existente")
             existing_chat.is_active = True
             existing_chat.is_blocked = False
             await db.commit()
             await db.refresh(existing_chat)
-            print(f"✅ DEBUG ChatService: Chat reactivado: {existing_chat}")
             return existing_chat
         
         # Crear nuevo chat
-        print(f"✅ DEBUG ChatService: Creando nuevo chat")
         new_chat = Chat(
             student_id=student_id,
             teacher_id=teacher_id,
@@ -65,13 +57,9 @@ class ChatService:
             is_blocked=False
         )
         
-        print(f"🔍 DEBUG ChatService: Chat creado en memoria: {new_chat}")
-        
         db.add(new_chat)
         await db.commit()
         await db.refresh(new_chat)
-        
-        print(f"✅ DEBUG ChatService: Chat guardado en BD: {new_chat}")
         
         return new_chat
     
