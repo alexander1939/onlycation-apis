@@ -6,6 +6,8 @@ from fastapi import HTTPException
 from app.models.booking.confirmation import Confirmation
 from app.models.users.user import User
 from app.cores.token import verify_token
+#Notifiacion en la app
+from app.services.notifications.notification_service import create_notification
 
 
 from cryptography.fernet import Fernet
@@ -166,6 +168,20 @@ async def create_confirmation_by_student(
     db.add(confirmation)
     await db.commit()
     await db.refresh(confirmation)
+#Notifiacion en la app
+    try:
+        teacher_id= confirmation.teacher_id
+        if teacher_id:
+            booking = confirmation.payment_booking.booking
+            await create_notification(
+                db=db,
+                user_id=teacher_id,
+                title="Clase confirmada por el estudiante",
+                message=f"El estudiante ha confirmado la clase del {booking.start_time.strftime('%d/%m/%Y %H:%M')} al {booking.end_time.strftime('%d/%m/%Y %H:%M')}.",
+                notification_type="student_confirmation"
+            )
+    except Exception as e:
+        print(f"Error creando notificación para el docente: {e}")
 
     return confirmation
 

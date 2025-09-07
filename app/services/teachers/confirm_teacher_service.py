@@ -20,6 +20,9 @@ from app.models.booking.confirmation import Confirmation
 from app.models.users.user import User
 from app.cores.token import verify_token
 
+#Notifiacion en la app
+from app.services.notifications.notification_service import create_notification
+
 # Cargar la clave de .env
 EVIDENCE_KEY = config("EVIDENCE_ENCRYPTION_KEY")
 cipher = Fernet(EVIDENCE_KEY.encode())
@@ -164,6 +167,17 @@ async def create_confirmation_by_teacher(
     db.add(confirmation)
     await db.commit()
     await db.refresh(confirmation)
+#Notifiacion en la app
+    try:
+        await create_notification(
+            db=db,
+            user_id=student_id,
+            title="Clase confirmada por tu docente",
+            message=f"Tu docente ha confirmado la clase con ID de reserva {payment_booking_id}.",
+            notification_type="teacher_confirmation"
+        )
+    except Exception as e:
+        print(f"Error creando notificacion: {e}")
 
     return confirmation
 
