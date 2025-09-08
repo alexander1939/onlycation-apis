@@ -53,13 +53,14 @@ from app.scripts.databases.create_privilege_role import create_privileges_role
 from app.scripts.databases.create_price_ranges import create_prices_range
 from app.scripts.databases.create_plan import create_premium_plan, create_free_plan
 from app.scripts.databases.create_benefit import create_benefit
-from app.scripts.databases.create_price_ranges import create_prices_range
 from app.scripts.databases.create_docente import crear_docente
+from app.scripts.databases.create_categories import create_categories
 
 from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.auths.register_service import RegisterUserRequest
 from app.apis.auth_api import register_student_route
 from app.apis.auth_api import register_teacher_route
+from better_profanity import profanity
 
 from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
@@ -70,10 +71,13 @@ from app.apis.notifications_api import router as notifications_router
 from app.apis.document_api import router as document_router
 from app.apis.booking_api import router as booking_router
 from app.apis.wallet_api import router as wallet_router
+from app.apis.foro_api import router as foro_router
+
 
 
 
 from fastapi.middleware.cors import CORSMiddleware
+profanity.load_censor_words()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -98,8 +102,8 @@ async def lifespan(app: FastAPI):
     await create_premium_plan()
     await create_free_plan()
     await create_benefit()
-    await create_prices_range()
     await crear_docente()
+    await create_categories()
 
     yield
 
@@ -141,6 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(document_router, prefix="/api/documents", tags=["Documents"])
     app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
     app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
+    app.include_router(foro_router, prefix="/api/foro", tags=["Foro"])
     ##app.include_router()
 
     return app
