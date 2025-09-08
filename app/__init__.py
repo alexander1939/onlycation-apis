@@ -74,7 +74,7 @@ from app.apis.document_api import router as document_router
 from app.apis.booking_api import router as booking_router
 from app.apis.wallet_api import router as wallet_router
 from app.apis.refund_api import router as refund_router
-
+from app.apis.availability_api import router as availability_router
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -122,8 +122,8 @@ def create_app() -> FastAPI:
     )
 
     origins = [
-        "http://localhost:5173",
-        "http://localhost:5173/",  
+        "http://localhost:8080",
+        "http://localhost:8080/",  
     ]
 
     app.add_middleware(
@@ -146,5 +146,6 @@ def create_app() -> FastAPI:
     app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
     app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
     app.include_router(refund_router, prefix="/api/refunds", tags=["Refunds"])
+    app.include_router(availability_router, prefix="/api/availability", tags=["Availability"])
 
     return app
