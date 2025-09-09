@@ -9,6 +9,7 @@ from app.cores.token import verify_token
 #Notifiacion en la app
 from app.services.notifications.notification_service import create_notification
 
+from app.services.notifications.booking_email_service import send_student_confirmation_email
 
 from cryptography.fernet import Fernet
 from decouple import config
@@ -170,7 +171,7 @@ async def create_confirmation_by_student(
     await db.refresh(confirmation)
 #Notifiacion en la app
     try:
-        teacher_id= confirmation.teacher_id
+        teacher_id = confirmation.teacher_id
         if teacher_id:
             booking = confirmation.payment_booking.booking
             await create_notification(
@@ -180,8 +181,13 @@ async def create_confirmation_by_student(
                 message=f"El estudiante ha confirmado la clase del {booking.start_time.strftime('%d/%m/%Y %H:%M')} al {booking.end_time.strftime('%d/%m/%Y %H:%M')}.",
                 notification_type="student_confirmation"
             )
+
+            await send_student_confirmation_email(db,teacher_id, payment_booking_id)
+
     except Exception as e:
         print(f"Error creando notificación para el docente: {e}")
+    
+
 
     return confirmation
 

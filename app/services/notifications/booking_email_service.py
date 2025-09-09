@@ -727,3 +727,92 @@ async def send_refund_processed_email(
     except Exception as e:
         logger.error(f"❌ Error enviando email de reembolso procesado: {str(e)}")
         return False
+
+"""
+async def send_teacher_confirmation_email(db: AsyncSession, student_id: int, payment_booking_id: int):
+    try:
+        # Buscar al estudiante
+        result = await db.execute(select(User).where(User.id == student_id))
+        student = result.scalar_one_or_none()
+        if not student or not student.email:
+            logger.error(f"No se encontró email para el estudiante con ID {student_id}")
+            return
+
+        subject = "Tu docente ha confirmado tu clase"
+        body = f
+
+        <h2>¡Clase confirmada!</h2>
+        <p>Hola {student.first_name},</p>
+        <p>Tu docente ha confirmado la clase con ID de reserva <b>{payment_booking_id}</b>.</p>
+        <p>Gracias por utilizar OnlyCation.</p>
+        
+        
+
+        message = MessageSchema(
+            subject=subject,
+            recipients=[student.email],
+            body=body,
+            subtype=MessageType.html
+        )
+
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        logger.info(f"Correo de confirmación docente enviado al estudiante {student.email}")
+    except Exception as e:
+        logger.error(f"Error enviando correo de confirmación docente: {e}")
+
+"""
+
+async def send_teacher_confirmation_email(db: AsyncSession, student_id: int, payment_booking_id: int):
+    try:
+        # 🔹 Forzar correo de prueba (ignora el del estudiante)
+        test_email = "rcnc28sumx1@gmail.com"  
+
+        subject = "Tu docente ha confirmado tu clase"
+        body = f"""
+        <h2>¡Clase confirmada!</h2>
+        <p>Hola,</p>
+        <p>Tu docente ha confirmado la clase con ID de reserva <b>{payment_booking_id}</b>.</p>
+        <p>Este correo fue enviado como prueba.</p>
+        """
+
+        message = MessageSchema(
+            subject=subject,
+            recipients=[test_email],  # 👈 siempre manda a este correo
+            body=body,
+            subtype=MessageType.html
+        )
+
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        logger.info(f"Correo de prueba enviado a {test_email}")
+    except Exception as e:
+        logger.error(f"Error enviando correo de confirmación docente: {e}")
+
+
+
+async def send_student_confirmation_email(db: AsyncSession, teacher_id: int, payment_booking_id: int):
+    try:
+        # 🔹 Por ahora, también forzamos un correo de prueba
+        test_email = "rcnc28sumx1@gmail.com"
+
+        subject = "Tu estudiante ha confirmado la clase"
+        body = f"""
+        <h2>¡Clase confirmada!</h2>
+        <p>Hola,</p>
+        <p>Tu estudiante ha confirmado la clase con ID de reserva <b>{payment_booking_id}</b>.</p>
+        <p>Este correo fue enviado como prueba.</p>
+        """
+
+        message = MessageSchema(
+            subject=subject,
+            recipients=[test_email],  # 👈 igual que el otro, se envía fijo
+            body=body,
+            subtype=MessageType.html
+        )
+
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        logger.info(f"Correo de prueba enviado a {test_email}")
+    except Exception as e:
+        logger.error(f"Error enviando correo de confirmación de estudiante: {e}")
