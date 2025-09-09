@@ -42,6 +42,9 @@ from  app.models.notifications.user_notifications import User_notification
 from app.models.booking.bookings import Booking
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.confirmation import Confirmation
+from app.models.booking.reschedule_request import RescheduleRequest
+
+from app.models.refunds.refund_request import RefundRequest
 
 from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_user_admin import create_admin_user
@@ -73,6 +76,7 @@ from app.apis.booking_api import router as booking_router
 from app.apis.wallet_api import router as wallet_router
 from app.apis.foro_api import router as foro_router
 
+from app.apis.refund_api import router as refund_router
 
 
 
@@ -147,5 +151,6 @@ def create_app() -> FastAPI:
     app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
     app.include_router(foro_router, prefix="/api/foro", tags=["Foro"])
     ##app.include_router()
+    app.include_router(refund_router, prefix="/api/refunds", tags=["Refunds"])
 
     return app

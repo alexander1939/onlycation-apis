@@ -1,7 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
-from typing import List
 
 # -----------------------------
 # Base Models
@@ -52,7 +51,7 @@ class ForoUpdateResponse(ForoBaseResponse):
     data: ForoUpdateData
 
 # -----------------------------
-# Get
+# Get (single)
 # -----------------------------
 class ForoData(ForoBaseData):
     created_at: datetime
@@ -60,6 +59,20 @@ class ForoData(ForoBaseData):
 
 class ForoResponse(ForoBaseResponse):
     data: Optional[ForoData] = None
+
+
+# -----------------------------
+# List (multiple)
+# -----------------------------
+class ForoListData(ForoData):
+    pass  # reutiliza ForoData (puedes extender si necesitas algo distinto)
+
+class ForoListResponse(ForoBaseResponse):
+    data: List[ForoListData]
+    total: int
+    offset: int
+    limit: int
+    has_more: bool
 
 # -----------------------------
 # UpdateMe (user-specific)
@@ -71,42 +84,3 @@ class ForoUpdateMeRequest(BaseModel):
     category_id: Optional[int] = None
     
     model_config = ConfigDict(from_attributes=True)
-
-
-# # -----------------------------
-# # Get All Foros (con paginación)
-# # -----------------------------
-
-# class ForoListData(ForoBaseData):
-#     created_at: datetime
-#     updated_at: datetime
-
-# class ForoListResponse(ForoBaseResponse):
-#     total: int
-#     offset: int
-#     limit: int
-#     has_more: bool
-#     data: List[ForoListData]
-
-
-
-# Foro - List paginated
-class ForoListData(BaseModel):
-    id: int
-    user_id: int
-    category_id: int
-    title: str
-    description: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-    
-    model_config = ConfigDict(from_attributes=True)
-
-class ForoListResponse(BaseModel):
-    success: bool
-    message: str
-    data: List[ForoListData]
-    total: int
-    offset: int
-    limit: int
-    has_more: bool  

@@ -22,3 +22,14 @@ class VerifyBookingPaymentResponse(BaseModel):
     message: str
     payment_status: Optional[str] = None
     data: Optional[Dict] = None
+
+class RescheduleBookingRequest(BaseModel):
+    booking_id: int
+    new_availability_id: int
+    new_start_time: datetime
+    new_end_time: datetime
+
+class RescheduleBookingResponse(BaseModel):
+    success: bool
+    message: str
+    data: Optional[Dict] = None

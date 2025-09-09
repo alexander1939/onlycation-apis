@@ -60,28 +60,35 @@ async def register_user(request: RegisterUserRequest, role_name: str, status_nam
                 free_plan = free_plan_result.scalar_one_or_none()
                 
                 if free_plan:
-                    # Crear PaymentSubscription (validación del pago)
-                    payment_subscription = PaymentSubscription(
-                        user_id=new_user.id,
-                        plan_id=free_plan.id,
-                        status_id=status.id,  # Activo
-                        stripe_payment_intent_id=None  # No hay Stripe para plan gratuito
+                    # Obtener status activo para la suscripción (diferente del usuario)
+                    active_status_result = await db.execute(
+                        select(Status).where(Status.name == "active")
                     )
-                    db.add(payment_subscription)
-                    await db.flush()
+                    active_status = active_status_result.scalar_one_or_none()
                     
-                    # Crear Subscription (validación de fechas y estado)
-                    subscription = Subscription(
-                        user_id=new_user.id,
-                        plan_id=free_plan.id,
-                        payment_suscription_id=payment_subscription.id,
-                        start_date=datetime.utcnow(),
-                        end_date=None,  # Plan gratuito ilimitado
-                        status_id=status.id
-                    )
-                    db.add(subscription)
-                    await db.flush()
-                    print(f"Plan gratuito asignado al docente {new_user.email}")
+                    if active_status:
+                        # Crear PaymentSubscription con status activo
+                        payment_subscription = PaymentSubscription(
+                            user_id=new_user.id,
+                            plan_id=free_plan.id,
+                            status_id=active_status.id,  # Suscripción siempre activa
+                            stripe_payment_intent_id=None  # No hay Stripe para plan gratuito
+                        )
+                        db.add(payment_subscription)
+                        await db.flush()
+                        
+                        # Crear Subscription con status activo
+                        subscription = Subscription(
+                            user_id=new_user.id,
+                            plan_id=free_plan.id,
+                            payment_suscription_id=payment_subscription.id,
+                            start_date=datetime.utcnow(),
+                            end_date=None,  # Plan gratuito ilimitado
+                            status_id=active_status.id  # Suscripción siempre activa
+                        )
+                        db.add(subscription)
+                        await db.flush()
+                        print(f"Plan gratuito asignado al docente {new_user.email}")
 
             await db.refresh(new_user)
 

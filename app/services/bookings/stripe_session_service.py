@@ -54,13 +54,21 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             detail="El horario solicitado no está dentro del rango de disponibilidad del docente"
         )
 
-    # 5. Validar que no hay traslape con otra reserva ya existente
+    # 5. Validar que no hay traslape con otra reserva ya existente en esa disponibilidad
     from app.models.booking.bookings import Booking
+    from app.models.common.status import Status
+    
+    # Obtener el ID del status 'cancelled'
+    cancelled_status_result = await db.execute(select(Status).where(Status.name == "cancelled"))
+    cancelled_status = cancelled_status_result.scalar_one_or_none()
+    cancelled_status_id = cancelled_status.id if cancelled_status else None
+    
     overlap_result = await db.execute(
         select(Booking).where(
             Booking.availability_id == booking_data.availability_id,
             Booking.start_time < requested_end,
-            Booking.end_time > requested_start
+            Booking.end_time > requested_start,
+            Booking.status_id != cancelled_status_id if cancelled_status_id else True
         )
     )
     existing_booking = overlap_result.scalar_one_or_none()
@@ -73,7 +81,26 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             detail=f"Ya existe una reserva en ese horario: {existing_start} - {existing_end}. Por favor selecciona otro horario."
         )
 
-    # 6. Validar que la reserva tiene al menos 1 hora de anticipación
+    # 6. Validar que el MISMO USUARIO no tenga otra reserva al mismo tiempo
+    user_overlap_result = await db.execute(
+        select(Booking).where(
+            Booking.user_id == user.id,
+            Booking.start_time < requested_end,
+            Booking.end_time > requested_start,
+            Booking.status_id != cancelled_status_id if cancelled_status_id else True
+        )
+    )
+    user_existing_booking = user_overlap_result.scalar_one_or_none()
+    if user_existing_booking:
+        # Formatear las fechas para mostrar en el error
+        user_existing_start = user_existing_booking.start_time.strftime('%d/%m/%Y %H:%M')
+        user_existing_end = user_existing_booking.end_time.strftime('%d/%m/%Y %H:%M')
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ya tienes una reserva en ese horario: {user_existing_start} - {user_existing_end}. No puedes reservar dos clases al mismo tiempo."
+        )
+
+    # 7. Validar que la reserva tiene al menos 1 hora de anticipación
     time_difference = (requested_start - current_time).total_seconds() / 3600  # en horas
     if time_difference < 1:
         raise HTTPException(
@@ -81,7 +108,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             detail="Debes reservar la clase con al menos 1 hora de anticipación"
         )
 
-    # 5. Obtener el precio asociado al docente y preferencia
+    # 8. Obtener el precio asociado al docente y preferencia
     price_result = await db.execute(
         select(Price).where(
             Price.user_id == disponibilidad.user_id,
@@ -94,13 +121,10 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
 
     # 6. Obtener información del docente para comisiones
     teacher_id = disponibilidad.user_id
-    print(f"🎯 DEBUG: Teacher ID: {teacher_id}")
     
     commission_rate = await get_teacher_commission_rate(db, teacher_id)
-    print(f"📊 DEBUG: Commission rate obtenida: {commission_rate}%")
     
     teacher_wallet = await get_teacher_wallet(db, teacher_id)
-    print(f"💳 DEBUG: Teacher wallet: {teacher_wallet.stripe_account_id}")
 
     # 7. Calcular el precio total basado en las horas
     if isinstance(booking_data.start_time, str):
@@ -121,7 +145,6 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     # Calcular precio: primera hora + horas adicionales
     total_price = price.selected_prices + (total_hours - 1) * price.extra_hour_price
     total_amount_cents = int(total_price * 100)  # Convertir a centavos
-    print(f"💵 DEBUG: Total price: ${total_price} MXN = {total_amount_cents} centavos")
     
     # Calcular comisiones
     commission_amount, teacher_amount = calculate_commission_amounts(total_amount_cents, commission_rate)
@@ -163,9 +186,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     }
     
     # Si hay comisión, usar Stripe Connect para dividir el pago
-    print(f"🔧 DEBUG: Configurando Stripe Connect...")
     if commission_amount > 0:
-        print(f"💰 DEBUG: Aplicando comisión de {commission_amount} centavos a la plataforma")
         session_data["payment_intent_data"] = {
             "application_fee_amount": commission_amount,
             "transfer_data": {
@@ -173,11 +194,8 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
                 # No especificar amount - Stripe automáticamente transfiere el resto
             },
         }
-        print(f"✅ DEBUG: Stripe Connect configurado CON comisión:")
-        print(f"   - application_fee_amount: {commission_amount}")
-        print(f"   - destination: {teacher_wallet.stripe_account_id}")
+        
     else:
-        print(f"⭐ DEBUG: Sin comisión - transfiriendo todo al docente")
         # Si no hay comisión (plan premium), transferir todo al docente
         session_data["payment_intent_data"] = {
             "transfer_data": {
@@ -185,9 +203,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
                 # No especificar amount - Stripe transfiere el total
             },
         }
-        print(f"✅ DEBUG: Stripe Connect configurado SIN comisión:")
-        print(f"   - destination: {teacher_wallet.stripe_account_id}")
-        print(f"   - sin application_fee_amount")
+       
     
     session = stripe.checkout.Session.create(**session_data)
     return {
