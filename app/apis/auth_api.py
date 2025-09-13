@@ -77,6 +77,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
+            "role": user.role.name if user.role else None,
         }
     }
 
