@@ -17,7 +17,11 @@ async def create_status():
                 Status(name="cancelled"),
                 Status(name="paid"),
                 Status(name="pending"),
-                Status(name="approved")
+                Status(name="approved"),
+                Status(name="occupied"),
+                Status(name="unavailable"),
+                Status(name="completed"),
+                Status(name="available"),
             ]
             db.add_all(status_list)
             await db.commit()
