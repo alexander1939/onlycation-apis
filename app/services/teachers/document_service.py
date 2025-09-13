@@ -39,6 +39,14 @@ async def _validate_file(file: UploadFile, field_name: str):
         raise ValueError(f"El archivo {field_name} debe ser un PDF")
     # no leemos aquí para no consumir memoria, validaremos tamaño al guardar si quieres
 
+async def _validate_description(value: str, field_name: str = "Descripción"):
+    if not value or not value.strip():
+        raise ValueError(f"El campo {field_name} es obligatorio")
+    if len(value.strip()) < 10:
+        raise ValueError(f"El campo {field_name} debe tener al menos 10 caracteres")
+    if len(value.strip()) > 500:
+        raise ValueError(f"El campo {field_name} no puede exceder los 500 caracteres")
+
 # -------- Token --------
 
 async def get_user_id_from_token(token: str) -> int:
@@ -76,7 +84,8 @@ async def create_document_by_token(
     rfc: str,
     expertise_area: str,
     certificate_file: UploadFile,
-    curriculum_file: UploadFile
+    curriculum_file: UploadFile,
+    description: str
 ) -> Document:
     user_id = await get_user_id_from_token(token)
 
@@ -85,6 +94,7 @@ async def create_document_by_token(
     await _validate_no_existing_document(db, user_id)
     await _validate_text_field(rfc, "RFC")
     await _validate_text_field(expertise_area, "Área de especialidad")
+    await _validate_description(description, "Descripción")
     await _validate_file(certificate_file, "Certificado")
     await _validate_file(curriculum_file, "Currículum")
 
@@ -105,6 +115,7 @@ async def create_document_by_token(
         certificate=certificate_path,  # .enc
         curriculum=curriculum_path,    # .enc
         expertise_area=expertise_area.strip(),
+        description=description.strip(),
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
