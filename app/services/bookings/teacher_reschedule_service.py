@@ -220,7 +220,7 @@ async def get_teacher_reschedule_requests(
             detailed_query = select(RescheduleRequest).options(
                 selectinload(RescheduleRequest.booking),
                 selectinload(RescheduleRequest.student),
-                selectinload(RescheduleRequest.status)
+                selectinload(RescheduleRequest.status_rel)
             ).where(
                 RescheduleRequest.id.in_(request_ids)
             ).order_by(RescheduleRequest.created_at.desc())
@@ -238,7 +238,7 @@ async def get_teacher_reschedule_requests(
                     "new_start_time": req.new_start_time.isoformat(),
                     "new_end_time": req.new_end_time.isoformat(),
                     "reason": req.reason,
-                    "status": req.status.name if req.status else "unknown",
+                    "status": req.status_rel.name if req.status_rel else "unknown",
                     "student_response": req.student_response,
                     "created_at": req.created_at.isoformat(),
                     "expires_at": req.expires_at.isoformat(),
