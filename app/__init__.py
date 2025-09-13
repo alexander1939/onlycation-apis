@@ -73,6 +73,9 @@ from app.apis.notifications_api import router as notifications_router
 from app.apis.document_api import router as document_router
 from app.apis.booking_api import router as booking_router
 
+from app.apis.assessment_api import router as assessment_router
+
+
 from app.apis.confirm_teacher_api import router as confirm_teacher_router
 from app.apis.confirm_student_api import router as confirm_student_router
 from app.apis.wallet_api import router as wallet_router
@@ -149,6 +152,8 @@ def create_app() -> FastAPI:
 
     app.include_router(confirm_teacher_router, prefix="/api/confirmation", tags=["Confirmation"])
     app.include_router(confirm_student_router, prefix="/api/confirmation", tags=["Confirmation"])
+
+    app.include_router(assessment_router, prefix="/api/assessments", tags=["Assessments"])
 
     ##app.include_router()
 
