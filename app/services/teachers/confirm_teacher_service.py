@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.bookings import Booking 
 
+from app.models.common.status import Status  
 from app.models.booking.confirmation import Confirmation
 from app.models.users.user import User
 from app.cores.token import verify_token
@@ -33,6 +34,15 @@ cipher = Fernet(EVIDENCE_KEY.encode())
 # Carpeta raíz para evidencia de teacher
 UPLOAD_DIR_TEACHER = os.path.join(os.getcwd(), "evidence", "teacher")
 os.makedirs(UPLOAD_DIR_TEACHER, exist_ok=True)
+
+async def get_status_id(db: AsyncSession, name: str) -> int:
+    result = await db.execute(select(Status).where(Status.name == name))
+    status = result.scalar_one_or_none()
+    if not status:
+        raise HTTPException(status_code=500, detail=f"El status '{name}' no existe en la BD")
+    return status.id
+
+
 
 
 async def _validate_teacher_exists(db: AsyncSession, teacher_id: int):
@@ -215,3 +225,4 @@ async def get_teacher_evidence(
         )
 
     return evidence_bytes, filename
+

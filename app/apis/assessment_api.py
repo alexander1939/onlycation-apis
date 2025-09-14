@@ -1,18 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 from app.apis.deps import auth_required, get_db, public_access
 from app.schemas.bookings.assessment_schema import (
     AssessmentCreate, TeacherCommentsListResponse, TeacherCommentResponse
 )
 from app.services.bookings.assessment_service import (
-    create_assessment
+    create_assessment,
+    get_teacher_comments_service,
+    get_public_comments_service,
+    get_student_comments_service
 )
-from app.models.booking.assessment import Assessment
-from app.models.booking.payment_bookings import PaymentBooking
-from app.models.booking.bookings import Booking
-from app.models.teachers.availability import Availability
-from app.models.users import User 
 
 router = APIRouter()
 
@@ -26,36 +23,15 @@ async def add_assessment(
     return await create_assessment(db, user_data["user_id"], request)
 
 
-
+# Comentarios privados (docente autenticado)
 @router.get("/teacher/comments/", response_model=TeacherCommentsListResponse, dependencies=[Depends(auth_required)])
 async def get_teacher_comments(
     db: AsyncSession = Depends(get_db),
     user_data: dict = Depends(auth_required)
 ):
     teacher_id = user_data["user_id"]
+    comments = await get_teacher_comments_service(db, teacher_id)
 
-    query = (
-        select(
-            Assessment.id,
-            Assessment.comment,
-            Assessment.qualification,
-            User.id.label("student_id"),
-            func.concat(User.first_name, " ", User.last_name).label("student_name"),
-        )
-        .join(PaymentBooking, PaymentBooking.id == Assessment.payment_booking_id)
-        .join(Booking, Booking.id == PaymentBooking.booking_id)
-        .join(Availability, Availability.id == Booking.availability_id)
-        .join(User, User.id == Assessment.user_id)  
-        .where(Availability.user_id == teacher_id) 
-    )
-
-    result = await db.execute(query)
-    comments = result.mappings().all()
-
-    if not comments:
-        raise HTTPException(status_code=404, detail="No se encontraron comentarios para este docente")
-
-    # Envolver la lista de comentarios en el objeto esperado
     return TeacherCommentsListResponse(
         success=True,
         message="Comentarios obtenidos correctamente",
@@ -63,48 +39,40 @@ async def get_teacher_comments(
     )
 
 
-
+# Comentarios públicos por docente
 @router.get(
     "/public/comments/{teacher_id}",
     response_model=TeacherCommentsListResponse,
     dependencies=[Depends(public_access)]
 )
-async def get_teacher_comments(
+async def get_public_comments(
     teacher_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    # 🔹 Verificar que el docente existe
-    teacher_query = select(User).where(User.id == teacher_id)
-    teacher_result = await db.execute(teacher_query)
-    teacher = teacher_result.scalar_one_or_none()
-
-    if not teacher:
-        raise HTTPException(status_code=404, detail=f"El docente con id {teacher_id} no existe")
-
-    # 🔹 Buscar comentarios asociados al docente
-    query = (
-        select(
-            Assessment.id,
-            Assessment.comment,
-            Assessment.qualification,
-            User.id.label("student_id"),
-            func.concat(User.first_name, " ", User.last_name).label("student_name"),
-        )
-        .join(User, User.id == Assessment.user_id)  # estudiante
-        .join(PaymentBooking, PaymentBooking.id == Assessment.payment_booking_id)
-        .join(Booking, Booking.id == PaymentBooking.booking_id)
-        .join(Availability, Availability.id == Booking.availability_id)
-        .where(Availability.user_id == teacher_id)  # docente dueño de la disponibilidad
-    )
-
-    result = await db.execute(query)
-    comments = result.mappings().all()
-
-    if not comments:
-        raise HTTPException(status_code=404, detail=f"No se encontraron comentarios para el docente con id {teacher_id}")
+    comments = await get_public_comments_service(db, teacher_id)
 
     return TeacherCommentsListResponse(
         success=True,
         message=f"Comentarios del docente {teacher_id} obtenidos correctamente (acceso público)",
+        data=[TeacherCommentResponse(**c) for c in comments]
+    )
+
+
+# Comentarios de un estudiante autenticado
+@router.get(
+    "/student/comments/",
+    response_model=TeacherCommentsListResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_student_comments(
+    db: AsyncSession = Depends(get_db),
+    user_data: dict = Depends(auth_required)
+):
+    student_id = user_data["user_id"]
+    comments = await get_student_comments_service(db, student_id)
+
+    return TeacherCommentsListResponse(
+        success=True,
+        message="Comentarios del estudiante obtenidos correctamente",
         data=[TeacherCommentResponse(**c) for c in comments]
     )

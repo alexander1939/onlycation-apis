@@ -30,10 +30,10 @@ class TeacherCommentResponse(BaseModel):
     qualification: Optional[int]
     student_id: int
     student_name: str
+    created_at: datetime  # 🔹 agregado
 
     class Config:
         orm_mode = True
-
 
 class TeacherCommentsListResponse(BaseModel):
     success: bool
