@@ -75,9 +75,12 @@ from app.apis.booking_api import router as booking_router
 from app.apis.wallet_api import router as wallet_router
 from app.apis.refund_api import router as refund_router
 from app.apis.availability_api import router as availability_router
-
+from app.apis.videos_api import router as videos_router
+from app.apis.public_videos_api import router as public_videos_router
 
 from fastapi.middleware.cors import CORSMiddleware
+
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -147,5 +150,7 @@ def create_app() -> FastAPI:
     app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
     app.include_router(refund_router, prefix="/api/refunds", tags=["Refunds"])
     app.include_router(availability_router, prefix="/api/availability", tags=["Availability"])
-
+    app.include_router(videos_router, prefix="/api/videos", tags=["Videos"])
+    app.include_router(public_videos_router, prefix="/api/public/videos", tags=["Public Videos"])
+    
     return app
