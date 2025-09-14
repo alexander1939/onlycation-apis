@@ -72,10 +72,11 @@ from app.apis.booking_api import router as booking_router
 from app.apis.wallet_api import router as wallet_router
 
 
+from app.apis.videos_api import router as videos_router
+from app.apis.public_videos_api import router as public_videos_router
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.apis.videos_api import router as videos_router
 
 
 @asynccontextmanager
@@ -138,6 +139,14 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
-    ##app.include_router()
+
+
+
+
+
+    
+    
+    app.include_router(videos_router, prefix="/api/videos", tags=["Videos"])
+    app.include_router(public_videos_router, prefix="/api/public/videos", tags=["Public Videos"])
 
     return app
