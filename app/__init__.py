@@ -152,4 +152,5 @@ def create_app() -> FastAPI:
     app.include_router(availability_router, prefix="/api/availability", tags=["Availability"])
     app.include_router(videos_router, prefix="/api/videos", tags=["Videos"])
     app.include_router(public_videos_router, prefix="/api/public/videos", tags=["Public Videos"])
+    
     return app
