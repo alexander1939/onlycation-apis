@@ -143,14 +143,15 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
-    app.include_router(preference_router, prefix="/api/preferences", tags=["Preferences"])
     app.include_router(price_router, prefix="/api/prices", tags=["Prices"])
     app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
     app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
+    app.include_router(document_router, prefix="/api/documents", tags=["Documents"])
     app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
     app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
+    app.include_router(refund_router, prefix="/api/refunds", tags=["Refunds"])
+    app.include_router(availability_router, prefix="/api/availability", tags=["Availability"])
     app.include_router(videos_router, prefix="/api/videos", tags=["Videos"])
     app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
-    ##app.include_router()
 
     return app
