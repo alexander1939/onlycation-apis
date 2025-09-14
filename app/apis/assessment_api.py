@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.apis.deps import auth_required, get_db, public_access
@@ -17,7 +17,7 @@ from app.models.users import User
 router = APIRouter()
 
 # Crear assessment (requiere auth)
-@router.post("/create/", response_model=TeacherCommentsListResponse, dependencies=[Depends(auth_required)])
+@router.post("/create/", response_model=AssessmentCreate, dependencies=[Depends(auth_required)])
 async def add_assessment(
     request: AssessmentCreate,
     db: AsyncSession = Depends(get_db),
@@ -64,10 +64,24 @@ async def get_teacher_comments(
 
 
 
-@router.get("/public/comments/", response_model=TeacherCommentsListResponse, dependencies=[Depends(public_access)])
-async def get_all_comments(
+@router.get(
+    "/public/comments/{teacher_id}",
+    response_model=TeacherCommentsListResponse,
+    dependencies=[Depends(public_access)]
+)
+async def get_teacher_comments(
+    teacher_id: int,
     db: AsyncSession = Depends(get_db),
 ):
+    # 🔹 Verificar que el docente existe
+    teacher_query = select(User).where(User.id == teacher_id)
+    teacher_result = await db.execute(teacher_query)
+    teacher = teacher_result.scalar_one_or_none()
+
+    if not teacher:
+        raise HTTPException(status_code=404, detail=f"El docente con id {teacher_id} no existe")
+
+    # 🔹 Buscar comentarios asociados al docente
     query = (
         select(
             Assessment.id,
@@ -76,17 +90,21 @@ async def get_all_comments(
             User.id.label("student_id"),
             func.concat(User.first_name, " ", User.last_name).label("student_name"),
         )
-        .join(User, User.id == Assessment.user_id) 
+        .join(User, User.id == Assessment.user_id)  # estudiante
+        .join(PaymentBooking, PaymentBooking.id == Assessment.payment_booking_id)
+        .join(Booking, Booking.id == PaymentBooking.booking_id)
+        .join(Availability, Availability.id == Booking.availability_id)
+        .where(Availability.user_id == teacher_id)  # docente dueño de la disponibilidad
     )
 
     result = await db.execute(query)
     comments = result.mappings().all()
 
     if not comments:
-        raise HTTPException(status_code=404, detail="No se encontraron comentarios")
+        raise HTTPException(status_code=404, detail=f"No se encontraron comentarios para el docente con id {teacher_id}")
 
     return TeacherCommentsListResponse(
         success=True,
-        message="Comentarios obtenidos correctamente (acceso público)",
+        message=f"Comentarios del docente {teacher_id} obtenidos correctamente (acceso público)",
         data=[TeacherCommentResponse(**c) for c in comments]
     )
