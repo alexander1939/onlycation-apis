@@ -7,6 +7,7 @@ from app.models.chat import Chat, Message
 from app.models.users.user import User
 from app.schemas.chat.chat_schema import MessageCreateRequest
 from app.services.encryption import EncryptionService
+from app.services.content_filter import ContentFilterService
 
 
 class MessageService:
@@ -17,7 +18,8 @@ class MessageService:
         db: AsyncSession,
         chat_id: int,
         sender_id: int,
-        content: str
+        content: str,
+        user_role: str = "student"
     ) -> Message:
         """
         Envía un nuevo mensaje en un chat.
@@ -27,12 +29,13 @@ class MessageService:
             chat_id: ID del chat
             sender_id: ID del remitente
             content: Contenido del mensaje
+            user_role: Rol del usuario (student/teacher)
             
         Returns:
             Message: El mensaje enviado
             
         Raises:
-            ValueError: Si el chat no existe, está bloqueado, o el usuario no es participante
+            ValueError: Si el chat no existe, está bloqueado, el usuario no es participante, o el contenido es inapropiado
         """
         # Verificar que el chat existe y está activo
         chat = await db.get(Chat, chat_id)
@@ -48,6 +51,19 @@ class MessageService:
         # Verificar que el remitente es participante del chat
         if chat.student_id != sender_id and chat.teacher_id != sender_id:
             raise ValueError("No eres participante de este chat")
+        
+        # Filtrar contenido del mensaje
+        content_filter = ContentFilterService()
+        filter_result = content_filter.filter_message(content, user_role)
+        
+        # Verificar si el mensaje es apropiado
+        if not filter_result["is_appropriate"]:
+            # Crear mensaje de error con sugerencias
+            error_message = f"❌ Mensaje bloqueado: {', '.join(filter_result['blocked_reasons'])}"
+            if filter_result["suggestions"]:
+                error_message += f"\n\n💡 Sugerencias: {', '.join(filter_result['suggestions'])}"
+            
+            raise ValueError(error_message)
         
         # Encriptar el contenido del mensaje
         try:

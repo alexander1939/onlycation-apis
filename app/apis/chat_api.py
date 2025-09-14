@@ -179,7 +179,8 @@ async def send_message(
             db=db,
             chat_id=request.chat_id,
             sender_id=current_user["user_id"],
-            content=request.content
+            content=request.content,
+            user_role=current_user["role"]
         )
         
         # Desencriptar el mensaje para la respuesta
