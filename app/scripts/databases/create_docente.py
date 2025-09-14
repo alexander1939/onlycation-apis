@@ -217,7 +217,7 @@ async def crear_docente():
 
         # Asignar plan gratuito por defecto
         subscription_result = await db.execute(
-            select(Subscription).where(Subscription.user_id == docente.id)
+            select(Subscription).where(Subscription.user_id == docente.id).limit(1)
         )
         existing_subscription = subscription_result.scalar_one_or_none()
         if not existing_subscription:

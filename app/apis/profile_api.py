@@ -3,17 +3,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.apis.deps import auth_required, get_db
 from app.schemas.user.profile_schema import ProfileCreateRequest, ProfileUpdateRequest, ProfileData, ProfileResponse, ProfileCreateData, ProfileCreateResponse, ProfileUpdateData, ProfileUpdateResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
-
-security = HTTPBearer()
-router = APIRouter()
-
+from app.schemas.user.preference_schema import (
+    PreferenceCreateRequest,
+    PreferenceCreateResponse,
+    PreferenceCreateData,
+    PreferenceResponse,
+    PreferenceData,
+    PreferenceUpdateRequest,
+    PreferenceUpdateResponse,
+    PreferenceUpdateData
+)
+from app.services.user.preference_service import (
+    create_preference_by_token,
+    get_preference_by_token,
+    update_preference_by_token
+)
 
 from app.services.user.profile_service import (
     create_profile_by_token,
      get_profile_by_token,
     update_profile_by_token
 )
+
+security = HTTPBearer()
+router = APIRouter()
 
 
 """
@@ -100,3 +113,95 @@ async def get_my_profile(
             updated_at=profile.updated_at
         )
     )
+
+
+"""
+    Crea preferencias para el usuario autenticado
+    - Usa el token JWT para identificar al usuario
+    - Un usuario solo puede tener un registro de preferencias
+    - Devuelve los datos básicos de las preferencias creadas
+"""
+@router.post("/preferences/create/",
+            response_model=PreferenceCreateResponse,
+            dependencies=[Depends(auth_required)])
+async def create_my_preferences(
+    preference_data: PreferenceCreateRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+        token = credentials.credentials
+        preference = await create_preference_by_token(db, token, preference_data)
+        
+        return PreferenceCreateResponse(
+            success=True,
+            message="Preferencias creadas exitosamente",
+            data=PreferenceCreateData(
+                educational_level_id=preference.educational_level_id,
+                modality_id=preference.modality_id,
+                location=preference.location,
+                location_description=preference.location_description,
+                created_at=preference.created_at
+            )
+        )
+
+
+
+"""
+    Actualiza las preferencias del usuario autenticado
+    - Usa el token JWT para identificar al usuario
+    - Actualiza solo los campos proporcionados
+    - Devuelve solo los campos relevantes para actualización
+"""
+@router.put("/preferences/update/me/",
+           response_model=PreferenceUpdateResponse,
+           dependencies=[Depends(auth_required)])
+async def update_my_preferences(
+    preference_data: PreferenceUpdateRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+        token = credentials.credentials
+        preference = await update_preference_by_token(db, token, preference_data)
+        
+        return PreferenceUpdateResponse(
+            success=True,
+            message="Preferencias actualizadas exitosamente",
+            data=PreferenceUpdateData(
+                educational_level_id=preference.educational_level_id,
+                modality_id=preference.modality_id,
+                location=preference.location,
+                location_description=preference.location_description,
+                updated_at=preference.updated_at
+            )
+        )
+
+    
+
+"""
+    Obtiene las preferencias del usuario autenticado
+    - Usa el token JWT para identificar al usuario
+    - Devuelve todos los campos de las preferencias
+"""
+@router.get("/preferences/me/",
+           response_model=PreferenceResponse,
+           dependencies=[Depends(auth_required)])
+async def get_my_preferences(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+
+        token = credentials.credentials
+        preference = await get_preference_by_token(db, token)
+        
+        return PreferenceResponse(
+            success=True,
+            message="Preferencias obtenidas exitosamente",
+            data=PreferenceData(
+                educational_level_id=preference.educational_level_id,
+                modality_id=preference.modality_id,
+                location=preference.location,
+                location_description=preference.location_description,
+                created_at=preference.created_at,
+                updated_at=preference.updated_at
+            )
+        )

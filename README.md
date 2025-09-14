@@ -47,3 +47,10 @@ Ejecutar el proyecto
 ```bash
 uvicorn app.main:app --reload
 ```
+
+```bash
+python - << 'PY'
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+PY
+```

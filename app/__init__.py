@@ -42,6 +42,9 @@ from  app.models.notifications.user_notifications import User_notification
 from app.models.booking.bookings import Booking
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.confirmation import Confirmation
+from app.models.booking.reschedule_request import RescheduleRequest
+
+from app.models.refunds.refund_request import RefundRequest
 
 from app.scripts.databases.create_status import create_status
 from app.scripts.databases.create_user_admin import create_admin_user
@@ -64,13 +67,14 @@ from app.apis.auth_api import register_teacher_route
 from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
 from app.apis.profile_api import router as profile_router
-from app.apis.preference_api import router as preference_router
 from app.apis.price_api import router as price_router
 from app.apis.suscripcion_api import router as suscripcion_router
 from app.apis.notifications_api import router as notifications_router
+from app.apis.document_api import router as document_router
 from app.apis.booking_api import router as booking_router
 from app.apis.wallet_api import router as wallet_router
-
+from app.apis.refund_api import router as refund_router
+from app.apis.availability_api import router as availability_router
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -122,8 +126,8 @@ def create_app() -> FastAPI:
     )
 
     origins = [
-        "http://localhost:5173",
-        "http://localhost:5173/",  
+        "http://localhost:8080",
+        "http://localhost:8080/",  
     ]
 
     app.add_middleware(
@@ -139,6 +143,12 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(privileges_router, prefix="/api/privileges", tags=["Privileges"])
     app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
+    app.include_router(preference_router, prefix="/api/preferences", tags=["Preferences"])
+    app.include_router(price_router, prefix="/api/prices", tags=["Prices"])
+    app.include_router(suscripcion_router, prefix="/api/suscripcion", tags=["suscripcion"])
+    app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
+    app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
+    app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
     app.include_router(videos_router, prefix="/api/videos", tags=["Videos"])
     app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
     ##app.include_router()
