@@ -15,4 +15,6 @@ pytest-flake8
 python-jose[cryptography]
 fastapi-mail
 stripe
+cryptography>=41.0.0
+better-profanity>=0.7.0
 better-profanity

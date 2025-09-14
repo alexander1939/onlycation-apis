@@ -86,6 +86,10 @@ profanity.load_censor_words()
 
 
 
+from app.apis.videos_api import router as videos_router
+from app.apis.chat_api import router as chat_router
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -157,6 +161,8 @@ def create_app() -> FastAPI:
     app.include_router(refund_router, prefix="/api/refunds", tags=["Refunds"])
     app.include_router(availability_router, prefix="/api/availability", tags=["Availability"])
     app.include_router(videos_router, prefix="/api/videos", tags=["Videos"])
+    app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
+
     app.include_router(public_videos_router, prefix="/api/public/videos", tags=["Public Videos"])
     
     return app
