@@ -3,3 +3,5 @@ from app.scripts.databases.create_role import create_role
 from app.scripts.databases.create_educational_level import create_educational_level
 from app.scripts.databases.create_modality import create_modality
 from app.scripts.databases.create_privilege import create_privileges
+from app.scripts.databases.create_price_ranges import create_prices_range
+from app.scripts.databases.create_categories import create_categories
