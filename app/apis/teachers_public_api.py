@@ -7,7 +7,7 @@ from app.schemas.teachers.teachers_public_shema import PublicTeacherProfile
 
 router = APIRouter()
 
-@router.get("/public", response_model=list[PublicTeacherProfile])
+@router.get("/teachers/", response_model=list[PublicTeacherProfile])
 async def public_access(
     min_bookings: Optional[int] = None,
     db: AsyncSession = Depends(get_db)
