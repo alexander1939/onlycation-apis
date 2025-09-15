@@ -75,6 +75,7 @@ from app.apis.document_api import router as document_router
 from app.apis.booking_api import router as booking_router
 from app.apis.wallet_api import router as wallet_router
 from app.apis.foro_api import router as foro_router
+from app.apis.teachers_public_api import router as teachers_public_router
 
 from app.apis.refund_api import router as refund_router
 
@@ -150,6 +151,7 @@ def create_app() -> FastAPI:
     app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
     app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
     app.include_router(foro_router, prefix="/api/foro", tags=["Foro"])
+    app.include_router(teachers_public_router, prefix="/api/teachers", tags=["Teachers public"])
     ##app.include_router()
     app.include_router(refund_router, prefix="/api/refunds", tags=["Refunds"])
 
