@@ -38,27 +38,56 @@ class ContentFilterService:
     def __init__(self):
         # Diccionario personalizado en español (más completo)
         custom_bad_words = [
-            # Palabras básicas
+            # Palabras básicas (de tu lista original)
             "puto", "puta", "verga", "pendejo", "pendeja", "cabron", "cabrona",
             "chingar", "chinga", "carajo", "coño", "malparido", "malparida",
             "hijueputa", "culero", "culera", "maricon", "marica", "boludo", "boluda",
             "pelotudo", "pelotuda", "concha", "picha", "pija", "poronga",
-            "mierda", "estupido", "estupida", "idiota", "imbecil",
-            
-            # Variaciones y palabras adicionales
+            "mierda", "estupido", "estupida", "idiota", "imbecil", "mrda", "mrdas",
+            "pdj", "pdja", "putas", "putos", "ctmd",
+    
+            # Variaciones y palabras adicionales (de tu lista original)
             "joder", "jodido", "jodida", "putear", "puteo", "mamada", "mamadas",
             "pinche", "pinches", "ojete", "ojetes", "nalga", "nalgas",
             "teta", "tetas", "culo", "culos", "ano", "pene", "vagina",
             "perra", "perro", "zorra", "zorras", "gay", "lesbiana",
             "retrasado", "retrasada", "mongolico", "mongolica",
-            
-            # Insultos regionales
+    
+            # Insultos regionales (de tu lista original)
             "weon", "weona", "huevon", "huevona", "gonorrea", "malandro",
             "mamagallista", "berraco", "verraco", "chimba", "parcero",
             
-            # Evasiones comunes
+            # Evasiones comunes (de tu lista original)
             "p3nd3jo", "p3nd3ja", "put0", "put4", "v3rga", "m13rd4",
-            "3stup1do", "1d10ta", "1mb3c1l", "c4br0n"
+            "3stup1do", "1d10ta", "1mb3c1l", "c4br0n",
+            
+            # Nuevas groserías y variaciones (de la lista ampliada anterior)
+            "cagada", "cagar", "cagado", "cagada", "cagón", "cagona",
+            "mierdoso", "mierdosa", "culiado", "culiada", "chupar", "chupa",
+            "mamón", "mamona", "chingadera", "chingado", "chingada",
+            "pito", "pitos", "huevada", "huevadas", "gil", "gila",
+            "pelado", "pelada", "tarado", "tarada", "baboso", "babosa",
+            "pendejada", "pendejadas", "joto", "jotos", "putazo",
+            "putada", "putadas", "vergaso", "vergasos", "culazo",
+            
+            # Más insultos regionales (de la lista ampliada anterior)
+            "carechimba", "caremonda", "careculo", "careverga", "culicagado",
+            "culicagada", "sapazo", "sapo", "sapa", "fregón", "fregona",
+            "jodón", "jodona", "guey", "güey", "gueyes", "cholo", "chola",
+            "naco", "naca", "chafa", "chafas", "choto", "chota",
+            
+            # Más evasiones comunes (de la lista ampliada anterior)
+            "c4g4d4", "ch1ng4", "p1t0", "cul14d0", "m4m0n", "m4m4d4",
+            "h4v4d4", "j0t0", "p3nd3j4d4", "t4r4d0", "b4b0s0",
+            "gu3y", "n4c0", "ch4f4",
+            
+            # Nuevas siglas y variaciones relacionadas con ctm, pdj, ptm
+            "ctm", "ptm", "hpm", "hptm", "hpt", "hijoputa", "hijoeputa",
+            "chingatumadre", "putamadre", "hijoputamadre", "hpmadre",
+            "ctmadre", "ptmadre", "pndj", "pndjo", "pndejo", "pndeja",
+            "c.t.m", "p.t.m", "h.p.m", "ctm4dre", "put4madre", "h1j0put4",
+            "ch1ng4tum4dre", "p3nd3j0", "p3nd3j4", "hpt4", "h1j0put4m4dre",
+            "ctmadr3", "ptmadr3"
         ]
         
         # Normalizar todas las palabras del diccionario
