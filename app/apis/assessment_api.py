@@ -14,13 +14,14 @@ from app.services.bookings.assessment_service import (
 router = APIRouter()
 
 # Crear assessment (requiere auth)
-@router.post("/create/", response_model=AssessmentCreate, dependencies=[Depends(auth_required)])
+@router.post("/create/{payment_booking_id}", response_model=AssessmentCreate, dependencies=[Depends(auth_required)])
 async def add_assessment(
+    payment_booking_id: int,
     request: AssessmentCreate,
     db: AsyncSession = Depends(get_db),
     user_data: dict = Depends(auth_required)
 ):
-    return await create_assessment(db, user_data["user_id"], request)
+    return await create_assessment(db, user_data["user_id"], payment_booking_id, request)
 
 
 # Comentarios privados (docente autenticado)

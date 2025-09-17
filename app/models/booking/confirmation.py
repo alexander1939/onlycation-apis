@@ -25,12 +25,12 @@ class Confirmation(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    status_id = Column(Integer, ForeignKey("statuses.id"), nullable=False)
+    #status_id = Column(Integer, ForeignKey("statuses.id"), nullable=False)
 
     payment_booking = relationship("PaymentBooking", backref="confirmations")
     teacher = relationship("User", foreign_keys=[teacher_id], backref="teacher_confirmations")
     student = relationship("User", foreign_keys=[student_id], backref="student_confirmations")
-    status = relationship("Status", backref="confirmations")
+    #status = relationship("Status", backref="confirmations")
 
     
     def __repr__(self):
@@ -45,6 +45,6 @@ class Confirmation(Base):
             f"evidence_teacher={self.evidence_teacher}, "
             f"description_student={self.description_student}, "
             f"description_teacher={self.description_teacher}"
-            f"<Confirmation(id={self.id}, status={self.status.name})>"
+            #f"<Confirmation(id={self.id}, status={self.status.name})>"
             f")>"
         )

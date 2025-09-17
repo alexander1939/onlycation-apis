@@ -54,3 +54,12 @@ from cryptography.fernet import Fernet
 print(Fernet.generate_key().decode())
 PY
 ```
+
+Generar codigo de incriptacion de la evidencias
+
+```bash
+python - << 'PY'
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+PY
+```

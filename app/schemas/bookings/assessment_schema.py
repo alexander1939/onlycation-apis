@@ -3,7 +3,7 @@ from typing import Optional, List
 from datetime import datetime
 
 class AssessmentCreate(BaseModel):
-    payment_booking_id: int
+    #payment_booking_id: int
     qualification: int
     comment: Optional[str] = None
 
