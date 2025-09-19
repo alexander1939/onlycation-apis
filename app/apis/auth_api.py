@@ -124,8 +124,8 @@ async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=f"Error al enviar el correo: {str(e)}")
 
-from app.schemas.auths.password_reset_schema import PasswordResetRequest, PasswordResetVerify
-from app.services.auths.password_reset_service import send_password_reset_email, verify_password_reset
+from app.schemas.auths.password_reset_schema import PasswordResetRequest, PasswordResetVerify, PasswordResetCheckCode
+from app.services.auths.password_reset_service import send_password_reset_email, verify_password_reset, check_verification_code_status
 
 @router.post("/password-reset/request")
 async def request_password_reset(
@@ -140,3 +140,10 @@ async def verify_password_reset_code(
     db: AsyncSession = Depends(get_db)
 ):
     return await verify_password_reset(request, db)
+
+@router.post("/password-reset/check-code")
+async def check_verification_code(
+    request: PasswordResetCheckCode, 
+    db: AsyncSession = Depends(get_db)
+):
+    return await check_verification_code_status(request.code, db)
