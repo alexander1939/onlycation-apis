@@ -12,6 +12,7 @@ from .teachers.document import Document
 from .teachers.price import Price
 from .teachers.video import Video
 
+from .booking.bookings import Booking 
 
 from .privileges.privilege import Privilege
 from .privileges.privilege_role import PrivilegeRole

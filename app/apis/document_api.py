@@ -24,6 +24,7 @@ security = HTTPBearer()
 async def create_document_route(
     rfc: str = Form(...),
     expertise_area: str = Form(...),
+    description: str = Form(...),
     certificate: UploadFile = File(...),
     curriculum: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -32,8 +33,14 @@ async def create_document_route(
     try:
         token = credentials.credentials
         document = await create_document_by_token(
-            db, token, rfc, expertise_area, certificate, curriculum
-        )
+            db=db,
+            token=token,
+            rfc=rfc,
+            expertise_area=expertise_area,
+            certificate_file=certificate,  # ← Nota: el parámetro se llama certificate_file
+            curriculum_file=curriculum,    # ← Nota: el parámetro se llama curriculum_file
+            description=description
+            )
         # No exponemos RFC ni paths; devolvemos solo metadatos
         return DocumentCreateResponse(
             success=True,
@@ -44,6 +51,7 @@ async def create_document_route(
                 rfc=document.rfc_cipher,
                 certificate=f"/api/documents/{document.id}/download/certificate",
                 curriculum=f"/api/documents/{document.id}/download/curriculum",
+                description=document.description,
                 expertise_area=document.expertise_area,
                 created_at=document.created_at
             )

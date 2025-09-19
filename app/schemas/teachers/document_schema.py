@@ -6,7 +6,7 @@ from datetime import datetime
 class DocumentCreateRequest(BaseModel):
     rfc: str
     expertise_area: str
-
+    description: str
 class DocumentCreateData(BaseModel):
     id: int
     user_id: int
@@ -14,6 +14,7 @@ class DocumentCreateData(BaseModel):
     certificate: str  # endpoint de descarga
     curriculum: str   # endpoint de descarga
     expertise_area: str
+    description: str
     created_at: datetime
 
 class DocumentCreateResponse(BaseModel):
