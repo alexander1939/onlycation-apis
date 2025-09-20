@@ -3,6 +3,10 @@ from sqlalchemy import select
 from datetime import datetime
 from fastapi import HTTPException
 
+
+from app.models.common.status import Status
+
+
 from app.models.booking.confirmation import Confirmation
 from app.models.users.user import User
 from app.cores.token import verify_token
@@ -50,6 +54,28 @@ async def get_student_id_from_token(token: str) -> int:
     return student_id
 
 
+# --- Función auxiliar para actualizar Booking ---
+async def update_booking_to_complete(db: AsyncSession, booking_id: int):
+    # Obtener el status "complete"
+    result = await db.execute(select(Status).where(Status.name == "complete"))
+    status = result.scalar_one_or_none()
+    if not status:
+        raise HTTPException(status_code=500, detail="El status 'complete' no existe en la BD")
+
+    # Obtener el Booking
+    result_bk = await db.execute(
+        select(Booking).where(Booking.id == booking_id)
+    )
+    booking = result_bk.scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking no encontrado")
+
+    # Actualizar el status
+    booking.status_id = status.id
+    await db.commit()
+    await db.refresh(booking)
+
+
 async def create_confirmation_by_student(
     db: AsyncSession,
     token: str,
@@ -78,31 +104,11 @@ async def create_confirmation_by_student(
     if not teacher_id:
         raise HTTPException(status_code=400, detail="El booking no tiene docente asignado")
 
-    # ✅ Verificar si el estudiante ya confirmó antes este payment_booking
-    existing_confirmation = await db.execute(
-        select(Confirmation).where(
-            Confirmation.payment_booking_id == payment_booking_id,
-            Confirmation.student_id == student_id
-        )
-    )
-    if existing_confirmation.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="El estudiante ya confirmó esta clase.")
-
-    # Validar ventana de confirmación: solo 5 min después del end_time
+    # Validar ventana de confirmación
     now = datetime.now(timezone.utc)
     cdmx_tz = pytz.timezone("America/Mexico_City")
-
-    if booking.start_time.tzinfo is None:
-        booking_start = cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
-    else:
-        booking_start = booking.start_time.astimezone(timezone.utc)
-
-    if booking.end_time.tzinfo is None:
-        booking_end = cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
-    else:
-        booking_end = booking.end_time.astimezone(timezone.utc)
-
-    start_window = booking_end
+    booking_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
+    booking_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
     end_window = booking_end + timedelta(minutes=5)
 
     if now < booking_start:
@@ -112,40 +118,57 @@ async def create_confirmation_by_student(
     if now > end_window:
         raise HTTPException(status_code=400, detail="El tiempo de confirmación expiró.")
 
-    # Validar archivo obligatorio
+    # Validar archivo obligatorio y descripción
     if not evidence_file or not evidence_file.filename:
         raise HTTPException(status_code=400, detail="Es obligatorio subir una evidencia (imagen)")
-
-    # Validar descripción
     if not description_student.strip():
         raise HTTPException(status_code=400, detail="Es obligatorio la descripción")
 
-    # Guardar archivo encriptado con nombre único
+    # Guardar archivo encriptado
     ext = os.path.splitext(evidence_file.filename)[1] or ".jpg"
     unique_name = f"{uuid.uuid4().hex}{ext}"
     file_path = os.path.join(UPLOAD_DIR_STUDENT, unique_name)
-
     file_bytes = await evidence_file.read()
     encrypted_data = cipher.encrypt(file_bytes)
-
     with open(file_path, "wb") as f:
         f.write(encrypted_data)
 
-    # Crear confirmación del estudiante
-    confirmation = Confirmation(
-        teacher_id=teacher_id,
-        student_id=student_id,
-        payment_booking_id=payment_booking_id,
-        confirmation_date_student=confirmation_value,
-        evidence_student=unique_name,
-        description_student=description_student
+    # --- Buscar o crear Confirmation ---
+    result_conf = await db.execute(
+        select(Confirmation).where(Confirmation.payment_booking_id == payment_booking_id)
     )
+    confirmation = result_conf.scalar_one_or_none()
 
-    db.add(confirmation)
+    if confirmation:
+        # Ya existe: verificar si el estudiante ya confirmó
+        if confirmation.confirmation_date_student is not None:
+            raise HTTPException(status_code=400, detail="El estudiante ya confirmó esta clase.")
+
+        # Actualizar campos del estudiante
+        confirmation.student_id = student_id
+        confirmation.confirmation_date_student = confirmation_value
+        confirmation.evidence_student = unique_name
+        confirmation.description_student = description_student
+    else:
+        # No existe: crear nueva fila
+        confirmation = Confirmation(
+            teacher_id=teacher_id,
+            student_id=student_id,
+            payment_booking_id=payment_booking_id,
+            confirmation_date_student=confirmation_value,
+            evidence_student=unique_name,
+            description_student=description_student
+        )
+        db.add(confirmation)
+
     await db.commit()
     await db.refresh(confirmation)
 
-    # Notificación en la app (para el docente)
+    # 🔹 Actualizar el status del Booking solo si ambos confirmaron
+    if confirmation.confirmation_date_teacher and confirmation.confirmation_date_student:
+        await update_booking_to_complete(db, booking.id)
+
+    # Notificación al docente
     try:
         await create_notification(
             db=db,
@@ -164,6 +187,8 @@ async def create_confirmation_by_student(
         print(f"Error enviando correo: {e}")
 
     return confirmation
+
+
 
 async def get_student_evidence(
     db: AsyncSession,
