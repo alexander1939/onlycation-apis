@@ -73,14 +73,22 @@ from app.apis.suscripcion_api import router as suscripcion_router
 from app.apis.notifications_api import router as notifications_router
 from app.apis.document_api import router as document_router
 from app.apis.booking_api import router as booking_router
+
+from app.apis.assessment_api import router as assessment_router
+
+
+from app.apis.confirm_teacher_api import router as confirm_teacher_router
+from app.apis.confirm_student_api import router as confirm_student_router
 from app.apis.wallet_api import router as wallet_router
 from app.apis.foro_api import router as foro_router
 from app.apis.teachers_public_api import router as teachers_public_router
 
 from app.apis.refund_api import router as refund_router
+
 from app.apis.availability_api import router as availability_router
 from app.apis.videos_api import router as videos_router
 from app.apis.public_videos_api import router as public_videos_router
+
 
 from fastapi.middleware.cors import CORSMiddleware
 profanity.load_censor_words()
@@ -156,6 +164,14 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
     app.include_router(document_router, prefix="/api/documents", tags=["Documents"])
     app.include_router(booking_router, prefix="/api/bookings", tags=["Bookings"])
+
+    app.include_router(confirm_teacher_router, prefix="/api/confirmation", tags=["Confirmation"])
+    app.include_router(confirm_student_router, prefix="/api/confirmation", tags=["Confirmation"])
+
+    app.include_router(assessment_router, prefix="/api/assessments", tags=["Assessments"])
+
+    ##app.include_router()
+
     app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
     app.include_router(foro_router, prefix="/api/foro", tags=["Foro"])
     app.include_router(teachers_public_router, prefix="/api/public", tags=["Public"])
