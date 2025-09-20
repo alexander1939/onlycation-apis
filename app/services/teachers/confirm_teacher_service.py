@@ -61,10 +61,10 @@ async def get_teacher_id_from_token(token: str) -> int:
 # --- Función auxiliar para actualizar Booking ---
 async def update_booking_to_complete(db: AsyncSession, booking_id: int):
     # Obtener el status "complete"
-    result = await db.execute(select(Status).where(Status.name == "complete"))
+    result = await db.execute(select(Status).where(Status.name == "completed"))
     status = result.scalar_one_or_none()
     if not status:
-        raise HTTPException(status_code=500, detail="El status 'complete' no existe en la BD")
+        raise HTTPException(status_code=500, detail="El status 'completed' no existe en la BD")
 
     # Obtener el Booking
     result_bk = await db.execute(
@@ -97,9 +97,10 @@ async def create_confirmation_by_teacher(
         .join(Booking, Booking.id == PaymentBooking.booking_id)
         .where(PaymentBooking.id == payment_booking_id)
     )
-    payment_booking, booking = result.first()
-    if not payment_booking:
+    row = result.first()
+    if not row:
         raise HTTPException(status_code=404, detail="El PaymentBooking no existe")
+    payment_booking, booking = row
 
     student_id = booking.user_id
     if not student_id:
@@ -130,7 +131,7 @@ async def create_confirmation_by_teacher(
     cdmx_tz = pytz.timezone("America/Mexico_City")
     booking_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
     booking_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
-    end_window = booking_end + timedelta(minutes=5)
+    end_window = booking_end + timedelta(hours=4)
 
     if now < booking_start:
         raise HTTPException(status_code=400, detail="La clase aún no ha comenzado.")
@@ -178,7 +179,7 @@ async def create_confirmation_by_teacher(
 
     # Correo
     try:
-        await send_teacher_confirmation_email(db, student_id, payment_booking_id, payment_booking_id)
+        await send_teacher_confirmation_email(db, student_id, payment_booking_id)
     except Exception as e:
         print(f"Error enviando correo: {e}")
 

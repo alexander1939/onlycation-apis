@@ -57,10 +57,10 @@ async def get_student_id_from_token(token: str) -> int:
 # --- Función auxiliar para actualizar Booking ---
 async def update_booking_to_complete(db: AsyncSession, booking_id: int):
     # Obtener el status "complete"
-    result = await db.execute(select(Status).where(Status.name == "complete"))
+    result = await db.execute(select(Status).where(Status.name == "completed"))
     status = result.scalar_one_or_none()
     if not status:
-        raise HTTPException(status_code=500, detail="El status 'complete' no existe en la BD")
+        raise HTTPException(status_code=500, detail="El status 'completed' no existe en la BD")
 
     # Obtener el Booking
     result_bk = await db.execute(
