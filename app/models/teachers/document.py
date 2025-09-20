@@ -22,6 +22,7 @@ class Document(Base):
     curriculum = Column(String(255), nullable=False)
 
     expertise_area = Column(String(100), nullable=False)
+    description = Column(String(500), nullable=False)  
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

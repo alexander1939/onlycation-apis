@@ -16,3 +16,7 @@ python-jose[cryptography]
 fastapi-mail
 stripe
 python-decouple
+cryptography>=41.0.0
+better-profanity>=0.7.0
+better-profanity
+

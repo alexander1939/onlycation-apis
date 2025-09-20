@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     
     EVIDENCE_ENCRYPTION_KEY: str
 
+    # External APIs
+    YOUTUBE_API_KEY: str | None = None
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
     MAIL_FROM: str

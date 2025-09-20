@@ -56,13 +56,14 @@ from app.scripts.databases.create_privilege_role import create_privileges_role
 from app.scripts.databases.create_price_ranges import create_prices_range
 from app.scripts.databases.create_plan import create_premium_plan, create_free_plan
 from app.scripts.databases.create_benefit import create_benefit
-from app.scripts.databases.create_price_ranges import create_prices_range
 from app.scripts.databases.create_docente import crear_docente
+from app.scripts.databases.create_categories import create_categories
 
 from app.schemas.auths.register_shema import RegisterUserRequest
 from app.services.auths.register_service import RegisterUserRequest
 from app.apis.auth_api import register_student_route
 from app.apis.auth_api import register_teacher_route
+from better_profanity import profanity
 
 from app.apis.auth_api import router as auth_router
 from app.apis.privileges_api import router as privileges_router
@@ -79,10 +80,24 @@ from app.apis.assessment_api import router as assessment_router
 from app.apis.confirm_teacher_api import router as confirm_teacher_router
 from app.apis.confirm_student_api import router as confirm_student_router
 from app.apis.wallet_api import router as wallet_router
+from app.apis.foro_api import router as foro_router
+from app.apis.teachers_public_api import router as teachers_public_router
+
 from app.apis.refund_api import router as refund_router
+
+from app.apis.availability_api import router as availability_router
+from app.apis.videos_api import router as videos_router
+from app.apis.public_videos_api import router as public_videos_router
 
 
 from fastapi.middleware.cors import CORSMiddleware
+profanity.load_censor_words()
+
+
+
+from app.apis.videos_api import router as videos_router
+from app.apis.chat_api import router as chat_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -107,8 +122,8 @@ async def lifespan(app: FastAPI):
     await create_premium_plan()
     await create_free_plan()
     await create_benefit()
-    await create_prices_range()
     await crear_docente()
+    await create_categories()
 
     yield
 
@@ -127,8 +142,8 @@ def create_app() -> FastAPI:
     )
 
     origins = [
-        "http://localhost:5173",
-        "http://localhost:5173/",  
+        "http://localhost:8080",
+        "http://localhost:8080/",  
     ]
 
     app.add_middleware(
@@ -158,6 +173,14 @@ def create_app() -> FastAPI:
     ##app.include_router()
 
     app.include_router(wallet_router, prefix="/api/wallet", tags=["Wallet"])
+    app.include_router(foro_router, prefix="/api/foro", tags=["Foro"])
+    app.include_router(teachers_public_router, prefix="/api/public", tags=["Public"])
+    ##app.include_router()
     app.include_router(refund_router, prefix="/api/refunds", tags=["Refunds"])
+    app.include_router(availability_router, prefix="/api/availability", tags=["Availability"])
+    app.include_router(videos_router, prefix="/api/videos", tags=["Videos"])
+    app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 
+    app.include_router(public_videos_router, prefix="/api/public/videos", tags=["Public Videos"])
+    
     return app

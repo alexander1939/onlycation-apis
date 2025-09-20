@@ -74,7 +74,7 @@ async def verify_password_reset(request: PasswordResetVerify, db: AsyncSession):
     # Verificar si hay código activo
     result = await db.execute(
         select(VerificationCode).where(
-            VerificationCode.email == request.email,
+            VerificationCode.code == request.code,
             VerificationCode.purpose == "password_reset",
             VerificationCode.used == False
         )
@@ -114,25 +114,7 @@ async def verify_password_reset(request: PasswordResetVerify, db: AsyncSession):
         else:
             verification_code.attempts = 0
     
-    # 3. Verificar si el código es correcto
-    if verification_code.code != request.code:
-        verification_code.attempts += 1
-        verification_code.last_attempt = datetime.now(timezone.utc)
-        await db.commit()
-        
-        remaining_attempts = 3 - verification_code.attempts
-        if remaining_attempts > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Código incorrecto. Te quedan {remaining_attempts} intentos"
-            )
-        else:
-            verification_code.used = True
-            await db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Demasiados intentos fallidos. El código ha sido invalidado. Solicita uno nuevo"
-            )
+    # El código ya fue verificado en la consulta inicial, no necesitamos verificarlo de nuevo
     
     # Validar la nueva contraseña
     try:
@@ -140,8 +122,8 @@ async def verify_password_reset(request: PasswordResetVerify, db: AsyncSession):
     except HTTPException as e:
         raise e
     
-    # Verificar si el usuario existe
-    user = await db.execute(select(User).where(User.email == request.email))
+    # Obtener el usuario usando el email del código de verificación
+    user = await db.execute(select(User).where(User.email == verification_code.email))
     user = user.scalars().first()
     
     if not user:
@@ -153,3 +135,57 @@ async def verify_password_reset(request: PasswordResetVerify, db: AsyncSession):
     await db.commit()
     
     return {"success": True, "message": "Contraseña actualizada correctamente"}
+
+async def check_verification_code_status(code: str, db: AsyncSession):
+    """Verifica si el código de verificación está activo"""
+    # Buscar código activo
+    result = await db.execute(
+        select(VerificationCode).where(
+            VerificationCode.code == code,
+            VerificationCode.purpose == "password_reset",
+            VerificationCode.used == False
+        )
+    )
+    verification_code = result.scalars().first()
+    
+    if not verification_code:
+        return {
+            "success": False,
+            "active": False,
+            "message": "No hay código de verificación activo"
+        }
+    
+    # Verificar si ha expirado
+    now = datetime.now(timezone.utc)
+    expires_at = verification_code.expires_at.replace(tzinfo=timezone.utc) if verification_code.expires_at.tzinfo is None else verification_code.expires_at
+    
+    if expires_at < now:
+        # Marcar como usado si ya expiró
+        verification_code.used = True
+        await db.commit()
+        return {
+            "success": False,
+            "active": False,
+            "message": "El código ha expirado"
+        }
+    
+    # Calcular tiempo restante
+    time_remaining = (expires_at - now).total_seconds()
+    minutes_remaining = int(time_remaining // 60)
+    seconds_remaining = int(time_remaining % 60)
+    
+    return {
+        "success": True,
+        "active": True,
+        "message": "Código activo",
+        "data": {
+            "attempts_used": verification_code.attempts,
+            "attempts_remaining": 3 - verification_code.attempts,
+            "expires_at": expires_at.isoformat(),
+            "time_remaining": {
+                "minutes": minutes_remaining,
+                "seconds": seconds_remaining,
+                "total_seconds": int(time_remaining)
+            }
+        }
+    }

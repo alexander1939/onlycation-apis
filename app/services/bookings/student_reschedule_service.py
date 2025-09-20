@@ -52,7 +52,7 @@ async def get_student_reschedule_requests(
         paginated_query = base_query.options(
             selectinload(RescheduleRequest.booking),
             selectinload(RescheduleRequest.teacher),
-            selectinload(RescheduleRequest.status)
+            selectinload(RescheduleRequest.status_rel)
         ).order_by(RescheduleRequest.created_at.desc()).limit(limit).offset(offset)
         
         result = await db.execute(paginated_query)
@@ -68,7 +68,7 @@ async def get_student_reschedule_requests(
                 "new_start_time": req.new_start_time.isoformat(),
                 "new_end_time": req.new_end_time.isoformat(),
                 "reason": req.reason,
-                "status": req.status.name if req.status else "pending",
+                "status": req.status_rel.name if req.status_rel else "pending",
                 "created_at": req.created_at.isoformat(),
                 "expires_at": req.expires_at.isoformat()
             }
