@@ -5,6 +5,7 @@ Incluye tareas que deben ejecutarse al arrancar la aplicación, como la creació
 
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
 from app.cores.db import Base, engine
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -88,6 +89,7 @@ from app.apis.refund_api import router as refund_router
 from app.apis.availability_api import router as availability_router
 from app.apis.videos_api import router as videos_router
 from app.apis.public_videos_api import router as public_videos_router
+from app.apis.common import router as common_router
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -142,8 +144,8 @@ def create_app() -> FastAPI:
     )
 
     origins = [
-        "http://localhost:8080",
-        "http://localhost:8080/",  
+        "http://localhost:5173/",
+        "http://localhost:5173",
     ]
 
     app.add_middleware(
@@ -182,5 +184,6 @@ def create_app() -> FastAPI:
     app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 
     app.include_router(public_videos_router, prefix="/api/public/videos", tags=["Public Videos"])
+    app.include_router(common_router, prefix="/api", tags=["Common Resources"])
     
     return app
