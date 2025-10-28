@@ -60,9 +60,7 @@ jobs:
           cmd_options: '-a'
           allow_issue_writing: false
 
-      - name: 📁 Upload ZAP report as artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap
-          path: .
+      - name: 💾 Save ZAP report locally
+        run: |
+          mkdir -p reports
+          cp zap_report.html reports/ || echo "Report not found"
