@@ -58,7 +58,7 @@ jobs:
         with:
           target: 'http://localhost:8000'
           cmd_options: '-a'
-          artifact_name: zap_security_report
+          artifact_name: zapscans
           allow_issue_writing: false
 
       - name: 📁 Upload ZAP report as artifact
