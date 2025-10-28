@@ -138,6 +138,12 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+
+    
+    @app.get("/")
+    def root():
+        return {"status": "ok"}
+    
     app = FastAPI(
         title="onlyCation", 
         lifespan=lifespan  
