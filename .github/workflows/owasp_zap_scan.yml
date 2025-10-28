@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  zap_scan:
+  zap_scan_job_v2:
     runs-on: ubuntu-latest
     env:
       SQLALCHEMY_DATABASE_URI: ${{ secrets.SQLALCHEMY_DATABASE_URI }}
