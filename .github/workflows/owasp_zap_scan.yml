@@ -58,7 +58,7 @@ jobs:
         with:
           target: 'http://localhost:8000'
           cmd_options: '-a'
-          allow_issue_writing: false
+          allow_issue_writing: true
           artifact_name: 'zap_scan_report'
 
       - name: 💾 Save ZAP report locally
