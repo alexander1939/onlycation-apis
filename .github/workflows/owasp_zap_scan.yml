@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  zap_scan_job:
+  zap_scan:
     runs-on: ubuntu-latest
     env:
       SQLALCHEMY_DATABASE_URI: ${{ secrets.SQLALCHEMY_DATABASE_URI }}
@@ -53,19 +53,15 @@ jobs:
           sleep 15
           curl http://localhost:8000 || true
 
-      - name: 🕷️ Run OWASP ZAP manually
+      - name: 🕷️ Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.15.0
+        with:
+          target: 'http://localhost:8000'
+          cmd_options: '-a'
+          allow_issue_writing: false
+          artifact_name: 'zap_scan_report'
+
+      - name: 💾 Save ZAP report locally
         run: |
           mkdir -p reports
-          docker pull owasp/zap2docker-stable
-          docker run --network host -v $PWD:/zap/wrk owasp/zap2docker-stable zap-baseline.py \
-            -t http://localhost:8000 \
-            -r /zap/wrk/reports/zap_report.html \
-            -J /zap/wrk/reports/zap_report.json \
-            -w /zap/wrk/reports/zap_report.md \
-            -a
-
-      - name: 💾 Upload ZAP reports as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap_report_files
-          path: reports/
+          cp zap_report.html reports/ || echo "Report not found"
