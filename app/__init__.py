@@ -138,11 +138,6 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-
-    
-    @app.get("/")
-    def root():
-        return {"status": "ok"}
     
     app = FastAPI(
         title="onlyCation", 
@@ -162,6 +157,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.get("/")
+    def root():
+        return {"status": "ok"}
 
     # Agrega el router de autenticación con un prefijo y una etiqueta
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
