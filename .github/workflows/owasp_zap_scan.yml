@@ -58,12 +58,12 @@ jobs:
         with:
           target: 'http://localhost:8000'
           cmd_options: '-a'
-          artifact_name: zapscans
+          artifact_name: zap
           allow_issue_writing: false
 
       - name: 📁 Upload ZAP report as artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zapscans
+          name: zap
           path: .
