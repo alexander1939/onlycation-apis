@@ -54,7 +54,28 @@ jobs:
           sleep 25
           curl -sSf http://localhost:8000/openapi.json > /dev/null || (echo "OpenAPI not reachable" && exit 1)
 
-      - name: 🕷️ Run OWASP ZAP API Scan (OpenAPI)
+      - name: � Discover endpoints and run ZAP full-scan per path
+        continue-on-error: true
+        run: |
+          mkdir -p reports
+          # install jq to parse openapi.json
+          sudo apt-get update -y && sudo apt-get install -y jq
+          echo 'Downloading openapi.json'
+          curl -sSf http://localhost:8000/openapi.json -o openapi.json || (echo "openapi.json not available" && exit 1)
+          echo 'Extracting paths from openapi.json'
+          paths=$(jq -r '.paths | keys[]' openapi.json)
+          idx=0
+          for p in $paths; do
+            # build the full URL; remove surrounding quotes if any
+            endpoint=$(echo "$p" | sed 's/"//g')
+            full_url="http://host.docker.internal:8000${endpoint}"
+            echo "Scanning $full_url"
+            docker run --rm -v ${{ github.workspace }}/reports:/zap/reports -t owasp/zap2docker-stable \
+              zap-full-scan.py -t "$full_url" -r /zap/reports/zap_full_path_${idx}.html -J /zap/reports/zap_full_path_${idx}.json -m 5
+            idx=$((idx+1))
+          done
+
+      - name: �🕷️ Run OWASP ZAP API Scan (OpenAPI)
         continue-on-error: true
         uses: zaproxy/action-api-scan@v0.7.0
         with:
@@ -69,8 +90,20 @@ jobs:
         uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://localhost:8000'
-          cmd_options: '-a'
+          # Generate both HTML and JSON reports and allow writing issues.
+          # Increase scanning strength if you want deeper checks (use -m for max duration minutes).
+          cmd_options: '-r zap_baseline_report.html -J zap_baseline_report.json -m 5'
           allow_issue_writing: true
+
+      - name: 🕸️ Run OWASP ZAP Full Scan (spider + active)
+        continue-on-error: true
+        # Use the official ZAP Docker image to run the full scan (spider + active scanning)
+        run: |
+          mkdir -p reports
+          # Run zap-full-scan.py inside the Docker image, mount the reports folder to collect results.
+          docker run --rm -v ${{ github.workspace }}/reports:/zap/reports -t owasp/zap2docker-stable \
+            zap-full-scan.py -t http://localhost:8000 -r /zap/reports/zap_full_report.html -J /zap/reports/zap_full_report.json -m 10 -z "-config scanner.attackOnStart=true"
+          # Note: -m sets max duration in minutes for the passive/active scan. Adjust as needed.
 
       - name: 💾 Save ZAP report locally
         if: always()
