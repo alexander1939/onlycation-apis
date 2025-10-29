@@ -33,11 +33,17 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           # Useful extras for CI
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov cryptography
 
-      - name: Create .env for CI (SQLite)
+      - name: Create .env for CI (SQLite) with valid Fernet key
         run: |
-          cat > .env << 'EOF'
+          # Generate a valid Fernet key (44-char urlsafe base64)
+          FERNET_KEY=$(python - <<'PY'
+          from cryptography.fernet import Fernet
+          print(Fernet.generate_key().decode('utf-8'))
+          PY
+          )
+          cat > .env << EOF
           SQLALCHEMY_DATABASE_URI=sqlite:///test.db
           SQLALCHEMY_TRACK_MODIFICATIONS=False
           SECRET_KEY=ci_test_secret_key
@@ -56,13 +62,15 @@ jobs:
           STRIPE_SECRET_KEY=sk_test_dummy
           STRIPE_PUBLIC_KEY=pk_test_dummy
           DOC_CIPHER_KEY=dummy_cipher_key
-          EVIDENCE_ENCRYPTION_KEY=dummy_evidence_key
+          # Both names to satisfy any import sites
+          EVIDENCE_KEY=$FERNET_KEY
+          EVIDENCE_ENCRYPTION_KEY=$FERNET_KEY
           YOUTUBE_API_KEY=
           LINKEDIN_CLIENT_ID=
           LINKEDIN_CLIENT_SECRET=
           LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/linkedin/callback
           EOF
-          echo "Created .env for CI:"
+          echo "Created .env for CI (keys redacted):"
           cat .env | sed 's/^\(.*PASSWORD\|.*SECRET\|.*KEY\)=.*/\1=***REDACTED***/'
 
       - name: Run pytest with coverage
