@@ -144,8 +144,9 @@ def create_app() -> FastAPI:
     )
 
     origins = [
-        "http://localhost:5173/",
         "http://localhost:5173",
+        "http://localhost:8080",
+        "http://192.168.1.100:8080",  # Cambia por la IP de tu dispositivo/emulador
     ]
 
     app.add_middleware(

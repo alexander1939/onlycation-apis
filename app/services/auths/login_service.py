@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 
 
-async def authenticate_user(db: AsyncSession, email: str, password: str):
+async def authenticate_user(db: AsyncSession, email: str, password: str = None, is_oauth: bool = False):
     result = await db.execute(
         select(User)
         .where(User.email == email)
@@ -19,14 +19,18 @@ async def authenticate_user(db: AsyncSession, email: str, password: str):
     )
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(password, user.password):# type: ignore
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+        
+    # Skip password check for OAuth users
+    if not is_oauth and (not user.password or not verify_password(password, user.password)):  # type: ignore
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
     return user
 
-async def login_user(db: AsyncSession, email: str, password: str):
+async def login_user(db: AsyncSession, email: str, password: str = None, is_oauth: bool = False):
     try:
-        user = await authenticate_user(db, email, password)
+        user = await authenticate_user(db, email, password, is_oauth=is_oauth)
 
         token_data = {
             "user_id": user.id,

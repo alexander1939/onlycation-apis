@@ -23,3 +23,11 @@ DOC_CIPHER_KEY=PEGA_AQUI_LA_CLAVE
 EVIDENCE_ENCRYPTION_KEY=PEGA_LA_CLAVE
 
 YOUTUBE_API_KEY=AIzaSyA0-YqoVS_ndF8Mq9SbwkIPSxsLUk8LVsM
+
+
+
+# LinkedIn OAuth
+LINKEDIN_CLIENT_ID=86dzs0i8socb7z
+LINKEDIN_CLIENT_SECRET=WPL_AP1.7sutMBd4P4i9F9Zr.HfGaCg==
+LINKEDIN_REDIRECT_URI=https://serum-instructor-sensor-registry.trycloudflare.com/api/auth/linkedin/callback
+#LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/linkedin/callback

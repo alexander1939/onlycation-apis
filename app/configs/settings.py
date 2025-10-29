@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     # Clave para cifrar/descifrar documentos
     doc_cipher_key: str
 
+    # LinkedIn OAuth
+    LINKEDIN_CLIENT_ID: str = ""
+    LINKEDIN_CLIENT_SECRET: str = ""
+    # Use the callback route as redirect target to match LinkedIn app configuration
+    LINKEDIN_REDIRECT_URI: str = "https://blog-exp-earrings-candidates.trycloudflare.com/api/auth/linkedin/callback"
+    #LINKEDIN_REDIRECT_URI: str = "http://localhost:8000/api/auth/linkedin/callback"
+
     model_config = ConfigDict(env_file=".env")
 
 
