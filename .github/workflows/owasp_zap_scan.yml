@@ -50,18 +50,32 @@ jobs:
       - name: 🚀 Start FastAPI app
         run: |
           nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 15
-          curl http://localhost:8000 || true
+          # Give the app more time to warm up and run DB seeds/migrations if any
+          sleep 25
+          curl -sSf http://localhost:8000/openapi.json > /dev/null || (echo "OpenAPI not reachable" && exit 1)
 
-      - name: 🕷️ Run OWASP ZAP Baseline Scan
+      - name: 🕷️ Run OWASP ZAP API Scan (OpenAPI)
+        uses: zaproxy/action-api-scan@v0.7.0
+        with:
+          # FastAPI serves the OpenAPI definition at /openapi.json by default
+          target: 'http://localhost:8000/openapi.json'
+          cmd_options: '-a'
+          allow_issue_writing: true
+          artifact_name: 'zap_api_scan_report'
+
+      # Optional: keep a lightweight baseline crawl against the root as well
+      - name: 🕷️ Run OWASP ZAP Baseline Scan (optional)
         uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://localhost:8000'
           cmd_options: '-a'
           allow_issue_writing: true
-          artifact_name: 'zap_scan_report'
+          artifact_name: 'zap_baseline_report'
 
       - name: 💾 Save ZAP report locally
         run: |
           mkdir -p reports
-          cp zap_report.html reports/ || echo "Report not found"
+          # Copy any ZAP reports that were generated
+          cp -n *.html reports/ 2>/dev/null || echo "No HTML reports found"
+          cp -n *.json reports/ 2>/dev/null || true
+          ls -la reports

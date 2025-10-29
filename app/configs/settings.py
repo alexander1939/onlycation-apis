@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     # Clave para cifrar/descifrar documentos
     doc_cipher_key: str
 
-    model_config = ConfigDict(env_file=".env")
+    model_config = ConfigDict(
+        env_file=".env",
+        extra="ignore",          # ignore unexpected env keys instead of raising
+        case_sensitive=False      # allow LINKEDIN_* in any case (e.g., lowercase)
+    )
 
 
 settings = Settings()
