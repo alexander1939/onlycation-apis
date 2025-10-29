@@ -7,9 +7,16 @@ from app.schemas.teachers.price_schema import (
     PriceCreateRequest,
     PriceCreateResponse,
     PriceCreateData,
-    PriceReadResponse
+    PriceReadResponse,
+    PriceAvailabilityResponse,
+    PriceAvailabilityData,
+    PriceRangeItem,
 )
-from app.services.teachers.price_service import create_price_by_token, get_prices_by_token
+from app.services.teachers.price_service import (
+    create_price_by_token,
+    get_prices_by_token,
+    get_price_availability_by_token,
+)
 from app.apis.deps import auth_required, get_db
 
 
@@ -68,3 +75,33 @@ async def get_prices_route(
         )
     except SQLAlchemyError:
         raise HTTPException(status_code=500, detail="Error al consultar los precios")
+
+@router.get("/availability/", response_model=PriceAvailabilityResponse, dependencies=[Depends(auth_required)])
+async def get_price_availability_route(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Devuelve, para el docente autenticado (por token), su `preference_id`,
+    el `educational_level_id` de esa preferencia y la lista de `price_ranges`
+    disponibles para ese nivel educativo.
+    """
+    token = credentials.credentials
+    try:
+        result = await get_price_availability_by_token(db, token)
+
+        return PriceAvailabilityResponse(
+            success=True,
+            message="Disponibilidad de precios obtenida correctamente",
+            data=PriceAvailabilityData(
+                preference_id=result["preference_id"],
+                educational_level_id=result["educational_level_id"],
+                price_ranges=[
+                    PriceRangeItem(**r) for r in result.get("price_ranges", [])
+                ],
+            ),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SQLAlchemyError:
+        raise HTTPException(status_code=500, detail="Error al consultar la disponibilidad de precios")
