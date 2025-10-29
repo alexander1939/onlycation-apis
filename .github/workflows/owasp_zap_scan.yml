@@ -1,4 +1,4 @@
-name: 🕷️ OWASP ZAP Security Scan (FastAPI)
+name: OWASP ZAP Security Scan (FastAPI)
 
 on:
   push:
@@ -33,28 +33,28 @@ jobs:
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
 
     steps:
-      - name: 🧾 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install uvicorn
 
-      - name: 🚀 Start FastAPI app
+      - name: Start FastAPI app
         run: |
           nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 &
           # Give the app more time to warm up and run DB seeds/migrations if any
           sleep 25
           curl -sSf http://localhost:8000/openapi.json > /dev/null || (echo "OpenAPI not reachable" && exit 1)
 
-      - name: � Discover endpoints and run ZAP full-scan per path
+      - name: Discover endpoints and run ZAP full-scan per path
         continue-on-error: true
         run: |
           mkdir -p reports
@@ -75,7 +75,7 @@ jobs:
             idx=$((idx+1))
           done
 
-      - name: �🕷️ Run OWASP ZAP API Scan (OpenAPI)
+      - name: Run OWASP ZAP API Scan (OpenAPI)
         continue-on-error: true
         uses: zaproxy/action-api-scan@v0.7.0
         with:
@@ -84,8 +84,7 @@ jobs:
           cmd_options: '-a'
           allow_issue_writing: true
 
-      # Optional: keep a lightweight baseline crawl against the root as well
-      - name: 🕷️ Run OWASP ZAP Baseline Scan (optional)
+      - name: Run OWASP ZAP Baseline Scan (optional)
         continue-on-error: true
         uses: zaproxy/action-baseline@v0.15.0
         with:
@@ -95,7 +94,7 @@ jobs:
           cmd_options: '-r zap_baseline_report.html -J zap_baseline_report.json -m 5'
           allow_issue_writing: true
 
-      - name: 🕸️ Run OWASP ZAP Full Scan (spider + active)
+      - name: Run OWASP ZAP Full Scan (spider + active)
         continue-on-error: true
         # Use the official ZAP Docker image to run the full scan (spider + active scanning)
         run: |
@@ -105,7 +104,7 @@ jobs:
             zap-full-scan.py -t http://localhost:8000 -r /zap/reports/zap_full_report.html -J /zap/reports/zap_full_report.json -m 10 -z "-config scanner.attackOnStart=true"
           # Note: -m sets max duration in minutes for the passive/active scan. Adjust as needed.
 
-      - name: 💾 Save ZAP report locally
+      - name: Save ZAP report locally
         if: always()
         run: |
           mkdir -p reports
@@ -114,7 +113,7 @@ jobs:
           cp -n *.json reports/ 2>/dev/null || true
           ls -la reports
 
-      - name: ⬆️ Upload ZAP reports artifact
+      - name: Upload ZAP reports artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
