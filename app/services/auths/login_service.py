@@ -19,8 +19,8 @@ async def authenticate_user(db: AsyncSession, email: str, password: str):
     )
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(password, user.password):# type: ignore
-        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    if not user or not verify_password(password, user.password):  # type: ignore
+        raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
 
     return user
 
