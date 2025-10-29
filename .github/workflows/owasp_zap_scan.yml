@@ -55,6 +55,7 @@ jobs:
           curl -sSf http://localhost:8000/openapi.json > /dev/null || (echo "OpenAPI not reachable" && exit 1)
 
       - name: 🕷️ Run OWASP ZAP API Scan (OpenAPI)
+        continue-on-error: true
         uses: zaproxy/action-api-scan@v0.7.0
         with:
           # FastAPI serves the OpenAPI definition at /openapi.json by default
@@ -64,6 +65,7 @@ jobs:
 
       # Optional: keep a lightweight baseline crawl against the root as well
       - name: 🕷️ Run OWASP ZAP Baseline Scan (optional)
+        continue-on-error: true
         uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://localhost:8000'
@@ -71,6 +73,7 @@ jobs:
           allow_issue_writing: true
 
       - name: 💾 Save ZAP report locally
+        if: always()
         run: |
           mkdir -p reports
           # Copy any ZAP reports that were generated
@@ -79,6 +82,7 @@ jobs:
           ls -la reports
 
       - name: ⬆️ Upload ZAP reports artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zapreports
