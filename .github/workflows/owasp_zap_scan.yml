@@ -61,7 +61,7 @@ jobs:
           target: 'http://localhost:8000/openapi.json'
           cmd_options: '-a'
           allow_issue_writing: true
-          artifact_name: 'zap_api_scan_report'
+          artifact_name: 'zap-api-scan-report'
 
       # Optional: keep a lightweight baseline crawl against the root as well
       - name: 🕷️ Run OWASP ZAP Baseline Scan (optional)
@@ -70,7 +70,7 @@ jobs:
           target: 'http://localhost:8000'
           cmd_options: '-a'
           allow_issue_writing: true
-          artifact_name: 'zap_baseline_report'
+          artifact_name: 'zap-baseline-report'
 
       - name: 💾 Save ZAP report locally
         run: |
