@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import desc
 
 import stripe
 from app.models.common.stripe_price import StripePrice
@@ -182,3 +183,38 @@ async def get_prices_by_token(db: AsyncSession, token: str) -> list[Price]:
     user_id = await get_user_id_from_token(token)
     result = await db.execute(select(Price).where(Price.user_id == user_id))
     return result.scalars().all()
+
+async def get_price_availability_by_token(db: AsyncSession, token: str) -> dict:
+    """
+    Resolve the user's latest Preference and fetch all PriceRanges available
+    for that educational_level. Returns a dict with preference_id,
+    educational_level_id and price_ranges (list of dicts).
+    """
+    user_id = await get_user_id_from_token(token)
+
+    # Get latest preference for this user (by created_at desc)
+    pref_q = await db.execute(
+        select(Preference).where(Preference.user_id == user_id).order_by(desc(Preference.created_at))
+    )
+    preference = pref_q.scalars().first()
+    if not preference:
+        raise ValueError("El usuario no tiene preferencias registradas")
+
+    # Fetch price ranges by the preference's educational level
+    ranges_q = await db.execute(
+        select(PriceRange).where(PriceRange.educational_level_id == preference.educational_level_id)
+    )
+    ranges = ranges_q.scalars().all()
+
+    return {
+        "preference_id": preference.id,
+        "educational_level_id": preference.educational_level_id,
+        "price_ranges": [
+            {
+                "id": r.id,
+                "minimum_price": r.minimum_price,
+                "maximum_price": r.maximum_price,
+            }
+            for r in ranges
+        ],
+    }

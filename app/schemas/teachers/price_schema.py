@@ -25,3 +25,18 @@ class PriceReadResponse(BaseModel):
     success: bool
     message: str
     data: Optional[list[PriceCreateData]]
+
+class PriceRangeItem(BaseModel):
+    id: int
+    minimum_price: float
+    maximum_price: float
+
+class PriceAvailabilityData(BaseModel):
+    preference_id: int
+    educational_level_id: int
+    price_ranges: list[PriceRangeItem]
+
+class PriceAvailabilityResponse(BaseModel):
+    success: bool
+    message: str
+    data: PriceAvailabilityData
