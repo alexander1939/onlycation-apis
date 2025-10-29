@@ -22,7 +22,9 @@ async def create_status():
                 Status(name="unavailable"),
                 Status(name="completed"),
                 Status(name="available"),
+
             ]
+            
             db.add_all(status_list)
             await db.commit()
             print("Estados creados correctamente")
