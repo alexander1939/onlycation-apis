@@ -6,6 +6,11 @@ from app.models.users.preference import Preference
 from app.models.teachers.price import Price
 from app.models.teachers.availability import Availability
 from app.models.teachers.wallet import Wallet
+from app.models.teachers.document import Document
+from app.models.teachers.video import Video
+from app.models.booking.bookings import Booking
+from app.models.booking.payment_bookings import PaymentBooking
+from app.models.booking.confirmation import Confirmation
 from app.models.subscriptions.plan import Plan
 from app.models.subscriptions.payment_subscription import PaymentSubscription
 from app.models.subscriptions.subscription import Subscription
@@ -15,7 +20,7 @@ from app.models.common.stripe_price import StripePrice
 from app.external.stripe_config import stripe_config
 import stripe
 from app.cores.security import get_password_hash
-
+from app.models.common.status import Status
 
 
 async def crear_docente():
@@ -254,5 +259,174 @@ async def crear_docente():
         else:
             print("El docente ya tiene una suscripción.")
 
+        # =====================
+        # Documento del docente
+        # =====================
+        doc_res = await db.execute(select(Document).where(Document.user_id == docente.id))
+        doc = doc_res.scalar_one_or_none()
+        if not doc:
+            # Valores dummy seguros para pruebas (no reales)
+            doc = Document(
+                user_id=docente.id,
+                rfc_hash="dummy_hash_pruebas_123",
+                rfc_cipher="dummy_cipher_base64",
+                certificate="/evidence/certs/dummy.enc",
+                curriculum="/evidence/cv/dummy.enc",
+                expertise_area="Matemáticas",
+                description="Docente de matemáticas con experiencia en álgebra y cálculo"
+            )
+            db.add(doc)
+            print("Documento del docente creado.")
+        else:
+            print("El documento del docente ya existe.")
+
+        # =====================
+        # Video del docente
+        # =====================
+        video_res = await db.execute(select(Video).where(Video.user_id == docente.id))
+        video = video_res.scalar_one_or_none()
+        if not video:
+            video = Video(
+                user_id=docente.id,
+                youtube_video_id="dQw4w9WgXcQ",
+                title="Presentación docente",
+                thumbnail_url="https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+                duration_seconds=180,
+                embed_url="https://www.youtube.com/embed/dQw4w9WgXcQ",
+                privacy_status="public",
+                embeddable=True,
+                original_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            )
+            db.add(video)
+            print("Video del docente creado.")
+        else:
+            print("El video del docente ya existe.")
+
+        # =====================
+        # Crear alumno de prueba
+        # =====================
+        student_res = await db.execute(select(User).where(User.email == "alumno_prueba@example.com"))
+        alumno = student_res.scalar_one_or_none()
+        if not alumno:
+            alumno = User(
+                first_name="Luis",
+                last_name="García",
+                email="alumno_prueba@example.com",
+                password=get_password_hash("12345678"),
+                role_id=2,  # asumiendo 2 = alumno
+                status_id=1,
+            )
+            db.add(alumno)
+            await db.flush()
+            # perfil simple opcional
+            perfil_alumno = Profile(
+                user_id=alumno.id,
+                credential="Estudiante",
+                gender="Masculino",
+                sex="M",
+            )
+            db.add(perfil_alumno)
+            print("Alumno de prueba creado.")
+        else:
+            print("El alumno de prueba ya existe.")
+
+        # =====================
+        # Crear una reserva futura (Booking) entre alumno y docente
+        # =====================
+        # Tomar o crear una disponibilidad futura válida
+        disponibilidad_futura = None
+        disp_q = await db.execute(select(Availability).where(Availability.user_id == docente.id))
+        disponibilidades = disp_q.scalars().all()
+        if disponibilidades:
+            disponibilidad_futura = disponibilidades[0]
+        else:
+            # en caso extremo crear una disponibilidad para mañana
+            manana = datetime.today() + timedelta(days=1)
+            disponibilidad_futura = Availability(
+                user_id=docente.id,
+                preference_id=preferencia.id,
+                day_of_week=manana.weekday(),
+                start_time=datetime.combine(manana.date(), time(hour=9, minute=0)),
+                end_time=datetime.combine(manana.date(), time(hour=22, minute=0)),
+            )
+            db.add(disponibilidad_futura)
+            await db.flush()
+
+        # Definir un horario dentro de la disponibilidad
+        clase_inicio = max(disponibilidad_futura.start_time, datetime.utcnow() + timedelta(days=1, hours=1))
+        clase_fin = clase_inicio + timedelta(hours=1)
+
+        # Verificar si ya existe un booking idéntico
+        booking_q = await db.execute(
+            select(Booking).where(
+                Booking.user_id == alumno.id,
+                Booking.availability_id == disponibilidad_futura.id,
+                Booking.start_time == clase_inicio,
+                Booking.end_time == clase_fin,
+            )
+        )
+        booking = booking_q.scalar_one_or_none()
+        if not booking:
+            # status para booking (usar "approved" si existe)
+            status_approved = (await db.execute(select(Status).where(Status.name == "approved"))).scalar_one_or_none()
+            booking = Booking(
+                user_id=alumno.id,
+                availability_id=disponibilidad_futura.id,
+                start_time=clase_inicio,
+                end_time=clase_fin,
+                status_id=status_approved.id if status_approved else None,
+                class_space="zoom"
+            )
+            db.add(booking)
+            await db.flush()
+            print("Booking de prueba creado.")
+        else:
+            print("El booking de prueba ya existe.")
+
+        # =====================
+        # PaymentBooking asociado
+        # =====================
+        pay_q = await db.execute(select(PaymentBooking).where(PaymentBooking.booking_id == booking.id))
+        pay = pay_q.scalar_one_or_none()
+        if not pay:
+            total_amount = int(precio.selected_prices * 100)
+            pay = PaymentBooking(
+                user_id=alumno.id,
+                booking_id=booking.id,
+                price_id=precio.id,
+                total_amount=total_amount,
+                commission_percentage=0,
+                commission_amount=0,
+                teacher_amount=total_amount,
+                platform_amount=0,
+                status_id=status_approved.id if status_approved else None,
+                stripe_payment_intent_id="pi_dummy_test",
+            )
+            db.add(pay)
+            await db.flush()
+            print("PaymentBooking de prueba creado.")
+        else:
+            print("El PaymentBooking de prueba ya existe.")
+
+        # =====================
+        # Confirmation de la clase
+        # =====================
+        conf_q = await db.execute(select(Confirmation).where(Confirmation.payment_booking_id == pay.id))
+        conf = conf_q.scalar_one_or_none()
+        if not conf:
+            conf = Confirmation(
+                teacher_id=docente.id,
+                student_id=alumno.id,
+                payment_booking_id=pay.id,
+                confirmation_date_teacher=False,
+                confirmation_date_student=False,
+                description_teacher="Clase programada",
+                description_student="Listo para la clase",
+            )
+            db.add(conf)
+            print("Confirmation de prueba creada.")
+        else:
+            print("La Confirmation de prueba ya existe.")
+
         await db.commit()
-        print("Docente de prueba creado con datos relacionados, wallet activo y plan gratuito.")
+        print("Docente de prueba creado con documentos, video, alumno, booking, payment_booking y confirmation.")

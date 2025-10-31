@@ -19,6 +19,14 @@ from app.services.bookings.student_reschedule_service import (
 from app.apis.deps import auth_required, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
+from app.services.bookings.upcoming_service import (
+    get_upcoming_bookings_for_user,
+    get_bookings_by_status_for_user,
+    search_bookings_for_user,
+)
+from app.schemas.bookings.upcoming_schema import UpcomingBookingsResponse
+from app.services.bookings.booking_detail_service import get_booking_detail_for_user
+from app.schemas.bookings.booking_detail_schema import BookingDetailResponse, BookingDetailData, PersonInfo
 
 router = APIRouter()
 
@@ -172,3 +180,149 @@ async def responder_reagendado(
         "message": f"Solicitud de reagendado {action} exitosamente",
         "data": result
     }
+
+@router.get("/my-next-classes/", response_model=UpcomingBookingsResponse, dependencies=[Depends(auth_required)])
+async def mis_proximas_clases(
+    offset: int = 0,
+    limit: int = 6,
+    db: AsyncSession = Depends(get_db),
+    user_data: dict = Depends(auth_required)
+):
+    """
+    Lista reservas futuras (no pasadas) del usuario autenticado con paginación.
+    Funciona para docente y alumno sin depender del rol; internamente trae
+    reservas donde el usuario participa como docente (dueño de la disponibilidad)
+    o como alumno (booking.user_id).
+
+    Incluye: materia (área de experiencia del docente), inicio/fin y modalidad,
+    además del campo participant_role ("teacher" o "student").
+    """
+    user_id = user_data.get("user_id")
+    result = await get_upcoming_bookings_for_user(
+        db=db,
+        user_id=user_id,
+        offset=offset,
+        limit=limit,
+    )
+
+    return {
+        "success": True,
+        "message": "Próximas clases obtenidas exitosamente",
+        "data": result["items"],
+        "total": result["total"],
+        "offset": result["offset"],
+        "limit": result["limit"],
+        "has_more": result["has_more"],
+    }
+
+@router.get("/my-classes/", response_model=UpcomingBookingsResponse, dependencies=[Depends(auth_required)])
+async def mis_clases_por_estado(
+    status: str = "upcoming",  # upcoming | past | cancelled | all
+    offset: int = 0,
+    limit: int = 6,
+    db: AsyncSession = Depends(get_db),
+    user_data: dict = Depends(auth_required),
+):
+    """
+    Lista reservas del usuario autenticado por estado solicitado con paginación.
+    Estados soportados: upcoming, past, cancelled, all.
+    Respuesta estandarizada igual que en 'mis-proximas-clases'.
+    """
+    user_id = user_data.get("user_id")
+    result = await get_bookings_by_status_for_user(
+        db=db,
+        user_id=user_id,
+        status=status,
+        offset=offset,
+        limit=limit,
+    )
+
+    return {
+        "success": True,
+        "message": "Próximas clases obtenidas exitosamente",
+        "data": result["items"],
+        "total": result["total"],
+        "offset": result["offset"],
+        "limit": result["limit"],
+        "has_more": result["has_more"],
+    }
+
+@router.get("/my-classes/search/", response_model=UpcomingBookingsResponse, dependencies=[Depends(auth_required)])
+async def buscar_mis_clases(
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    status: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    offset: int = 0,
+    limit: int = 6,
+    db: AsyncSession = Depends(get_db),
+    user_data: dict = Depends(auth_required),
+):
+    """
+    Busca reservas del usuario autenticado por combinación de filtros:
+    - Rango de fechas (start_time)
+    - Estado por nombre (approved, cancelled, pending, etc.)
+    - Rango de precio (total pagado en PaymentBooking.total_amount)
+    """
+    user_id = user_data.get("user_id")
+    result = await search_bookings_for_user(
+        db=db,
+        user_id=user_id,
+        date_from=date_from,
+        date_to=date_to,
+        status=status,
+        min_price=min_price,
+        max_price=max_price,
+        offset=offset,
+        limit=limit,
+    )
+
+    return {
+        "success": True,
+        "message": "Próximas clases obtenidas exitosamente",
+        "data": result["items"],
+        "total": result["total"],
+        "offset": result["offset"],
+        "limit": result["limit"],
+        "has_more": result["has_more"],
+    }
+
+@router.get("/booking/{booking_id}/detalle/", response_model=BookingDetailResponse, dependencies=[Depends(auth_required)])
+async def obtener_detalle_booking(
+    booking_id: int,
+    db: AsyncSession = Depends(get_db),
+    user_data: dict = Depends(auth_required)
+):
+    """
+    Devuelve información detallada de una reserva específica, para docente o alumno
+    autenticado que participe en esa reserva. Incluye docente, alumno, fechas,
+    modalidad, link de clase, materia, estatus y confirmaciones.
+    """
+    try:
+        detail = await get_booking_detail_for_user(db, booking_id, user_data.get("user_id"))
+        return BookingDetailResponse(
+            success=True,
+            message="Detalle de reserva obtenido correctamente",
+            data=BookingDetailData(
+                booking_id=detail["booking_id"],
+                created_at=detail["created_at"],
+                start_time=detail["start_time"],
+                end_time=detail["end_time"],
+                modality=detail["modality"],
+                class_link=detail["class_link"],
+                materia=detail["materia"],
+                status=detail["status"],
+                teacher=PersonInfo(**detail["teacher"]),
+                student=PersonInfo(**detail["student"]),
+                confirmation_teacher=detail["confirmation_teacher"],
+                confirmation_student=detail["confirmation_student"],
+                total_paid=detail.get("total_paid"),
+            ),
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error al obtener detalle de la reserva")
