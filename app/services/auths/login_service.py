@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.validation.exception import unexpected_exception
 from app.models.common.verification_code import VerificationCode
 from datetime import datetime, timedelta
+from app.models.users.preference import Preference
 
 
 
@@ -66,7 +67,15 @@ async def login_user(db: AsyncSession, email: str, password: str):
             db.add(code_entry)
             await db.commit()
 
-        return access_token, refresh_token, user
+        # Buscar preference_id si es docente
+        preference_id = None
+        if user.role and user.role.name == "teacher":
+            pref_result = await db.execute(select(Preference).where(Preference.user_id == user.id))
+            pref = pref_result.scalar_one_or_none()
+            if pref:
+                preference_id = pref.id
+
+        return access_token, refresh_token, user, preference_id
 
     except HTTPException as e:
         raise e

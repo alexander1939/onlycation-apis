@@ -8,6 +8,10 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from app.cores.db import Base, engine
 from sqlalchemy.ext.asyncio import AsyncEngine
+from app.cores.rate_limiter import limiter, rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.cores.security_headers import SecurityHeadersMiddleware
 
 from app.models.common.status import Status
 from app.models.common.role import Role
@@ -143,6 +147,13 @@ def create_app() -> FastAPI:
         title="onlyCation", 
         lifespan=lifespan  
     )
+
+    # Configurar rate limiter
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+    # Agregar middleware de seguridad
+    app.add_middleware(SecurityHeadersMiddleware)
 
     origins = [
         "http://localhost:5173/",

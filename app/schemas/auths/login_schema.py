@@ -3,6 +3,7 @@ Modelo que representa la estructura de datos recibida y enviara en una solicitud
 """
 
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -16,6 +17,8 @@ class LoginData(BaseModel):
     first_name: str
     last_name: str
     role: str
+    preference_id: Optional[int] = None
+
 class LoginResponse(BaseModel):
     success: bool
     message: str

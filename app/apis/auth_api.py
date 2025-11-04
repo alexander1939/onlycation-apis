@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException
 from app.schemas.auths.logout_sheme import DefaultResponse, LogoutRequest
 from app.schemas.auths.refresh_token import RefreshTokenRequest
@@ -11,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from app.schemas.auths.login_schema import LoginRequest, LoginResponse
 from app.services.auths.login_service import login_user
-
+from app.cores.rate_limiter import limiter
 
 from app.schemas.externals.email_schema import EmailSchema
 from app.services.externals.email_service import send_email
@@ -65,8 +64,9 @@ Ruta para iniciar sesión.
     - Devuelve el token, tipo de token y algunos datos del usuario.
 """
 @router.post("/login/", response_model=LoginResponse, dependencies=[Depends(public_access)])
+@limiter.limit("5/minute")  # Máximo 5 intentos de login por minuto por IP
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
-    access_token, refresh_token, user = await login_user(db, request.email, request.password)# type: ignore
+    access_token, refresh_token, user, preference_id = await login_user(db, request.email, request.password)# type: ignore
     return {
         "success": True,
         "message": "Login exitoso",
@@ -78,6 +78,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "role": user.role.name if user.role else None,
+            "preference_id": preference_id,
         }
     }
 
