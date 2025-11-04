@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from app.schemas.auths.login_schema import LoginRequest, LoginResponse
 from app.services.auths.login_service import login_user
-
+from app.cores.rate_limiter import limiter
 
 from app.schemas.externals.email_schema import EmailSchema
 from app.services.externals.email_service import send_email
@@ -64,6 +64,7 @@ Ruta para iniciar sesión.
     - Devuelve el token, tipo de token y algunos datos del usuario.
 """
 @router.post("/login/", response_model=LoginResponse, dependencies=[Depends(public_access)])
+@limiter.limit("5/minute")  # Máximo 5 intentos de login por minuto por IP
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     access_token, refresh_token, user, preference_id = await login_user(db, request.email, request.password)# type: ignore
     return {

@@ -17,6 +17,7 @@ from app.schemas.students.confirm_students_schema import (
 )
 from app.services.students.confirm_students_service import create_confirmation_by_student
 from app.services.students.confirm_students_service import get_student_evidence
+from app.cores.file_validator import FileValidator
 
 security = HTTPBearer()
 router = APIRouter()
@@ -27,12 +28,15 @@ router = APIRouter()
 async def confirm_student(
     payment_booking_id: int,
     confirmation: bool = Form(...),          
-    description_student: str = Form(...),   # 🔹 Nuevo campo obligatorio      
+    description_student: str = Form(...),   # Nuevo campo obligatorio      
     evidence_file: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
     token = credentials.credentials
+    
+    # Validar archivo de evidencia
+    await FileValidator.validate_file(evidence_file, file_type="image", max_size=5*1024*1024)
 
     confirmation_obj = await create_confirmation_by_student(
         db=db,
@@ -40,7 +44,7 @@ async def confirm_student(
         confirmation_value=confirmation,
         payment_booking_id=payment_booking_id,   
         evidence_file=evidence_file,
-        description_student=description_student   # 🔹 Se pasa al service
+        description_student=description_student   # Se pasa al service
     )
 
     return StudentConfirmationCreateResponse(

@@ -13,6 +13,7 @@ from app.models import Document
 from sqlalchemy import select
 import os
 from app.cores.security import decrypt_text
+from app.cores.file_validator import FileValidator
 
 
 router = APIRouter()
@@ -31,6 +32,10 @@ async def create_document_route(
     db: AsyncSession = Depends(get_db)
 ):
     try:
+        # Validar archivos antes de procesarlos
+        await FileValidator.validate_file(certificate, file_type="pdf", max_size=10*1024*1024)
+        await FileValidator.validate_file(curriculum, file_type="pdf", max_size=10*1024*1024)
+        
         token = credentials.credentials
         document = await create_document_by_token(
             db=db,
