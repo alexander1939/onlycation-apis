@@ -181,25 +181,20 @@ async def crear_docente():
         )
         disponibilidades = disponibilidad_result.scalars().all()
         if not disponibilidades:
-            manana = datetime.today() + timedelta(days=1)
-
-            disponibilidad = Availability(
-                user_id=docente.id,
-                preference_id=preferencia.id,
-                day_of_week=1,  # Lunes
-                start_time=datetime.combine(datetime.today(), time(hour=9, minute=0)),   # 09:00
-                end_time=datetime.combine(datetime.today(), time(hour=22, minute=0))    # 22:00
-            )
-            disponibilidad2 = Availability(
-                user_id=docente.id,
-                preference_id=preferencia.id,
-                day_of_week=1,  # Lunes
-                start_time=datetime.combine(manana.date(), time(hour=9, minute=0)),   # 09:00 mañana
-                end_time=datetime.combine(manana.date(), time(hour=22, minute=0))     # 22:00 mañana
-            )
-            db.add(disponibilidad)
-            db.add(disponibilidad2)
-            print("Disponibilidad creada.")
+            # Crear disponibilidades de hora en hora - SOLO HORAS como STRING
+            
+            # Crear slots de 9 AM a 10 PM para Lunes (9-10, 10-11, ..., 21-22)
+            for hora in range(9, 22):  # 9 a 21 (el último slot será 21:00-22:00)
+                disponibilidad = Availability(
+                    user_id=docente.id,
+                    preference_id=preferencia.id,
+                    day_of_week=1,  # Lunes
+                    start_time=f"{hora:02d}:00:00",  # String: "09:00:00", "10:00:00", etc.
+                    end_time=f"{hora+1:02d}:00:00"   # String: "10:00:00", "11:00:00", etc.
+                )
+                db.add(disponibilidad)
+            
+            print("Disponibilidades creadas como strings: 09:00:00, 10:00:00, ..., 22:00:00")
         else:
             print("La disponibilidad ya existe.")
 
@@ -331,57 +326,85 @@ async def crear_docente():
             print("El alumno de prueba ya existe.")
 
         # =====================
-        # Crear una reserva futura (Booking) entre alumno y docente
+        # BOOKING DE PRUEBA
         # =====================
-        # Tomar o crear una disponibilidad futura válida
-        disponibilidad_futura = None
-        disp_q = await db.execute(select(Availability).where(Availability.user_id == docente.id))
-        disponibilidades = disp_q.scalars().all()
-        if disponibilidades:
-            disponibilidad_futura = disponibilidades[0]
-        else:
-            # en caso extremo crear una disponibilidad para mañana
-            manana = datetime.today() + timedelta(days=1)
-            disponibilidad_futura = Availability(
-                user_id=docente.id,
-                preference_id=preferencia.id,
-                day_of_week=manana.weekday(),
-                start_time=datetime.combine(manana.date(), time(hour=9, minute=0)),
-                end_time=datetime.combine(manana.date(), time(hour=22, minute=0)),
+        
+        # ELIMINAR BOOKINGS ANTIGUOS para empezar limpio
+        delete_bookings = await db.execute(
+            select(Booking).join(Availability).where(Availability.user_id == docente.id)
+        )
+        old_bookings = delete_bookings.scalars().all()
+        
+        # Primero eliminar Confirmations y PaymentBookings asociados
+        from app.models.booking.payment_bookings import PaymentBooking
+        for old_booking in old_bookings:
+            payment_booking_q = await db.execute(
+                select(PaymentBooking).where(PaymentBooking.booking_id == old_booking.id)
             )
-            db.add(disponibilidad_futura)
-            await db.flush()
+            payment_bookings = payment_booking_q.scalars().all()
+            for pb in payment_bookings:
+                # Eliminar confirmations de este PaymentBooking
+                confirmation_q = await db.execute(
+                    select(Confirmation).where(Confirmation.payment_booking_id == pb.id)
+                )
+                confirmations = confirmation_q.scalars().all()
+                for conf in confirmations:
+                    await db.delete(conf)
+                # Luego eliminar el PaymentBooking
+                await db.delete(pb)
+        
+        # Finalmente eliminar los bookings
+        for old_booking in old_bookings:
+            await db.delete(old_booking)
+        await db.flush()
+        print(f"🗑️  Eliminados {len(old_bookings)} bookings antiguos")
+        
+        # ELIMINAR AVAILABILITIES ANTIGUAS
+        old_availabilities = await db.execute(
+            select(Availability).where(Availability.user_id == docente.id)
+        )
+        old_avails = old_availabilities.scalars().all()
+        for avail in old_avails:
+            await db.delete(avail)
+        await db.flush()
+        print(f"🗑️  Eliminadas {len(old_avails)} availabilities antiguas")
+        
+        # Crear availability NUEVA para MARTES (Nov 4 es martes)
+        disponibilidad_futura = Availability(
+            user_id=docente.id,
+            preference_id=preferencia.id,
+            day_of_week=2,  # MARTES (Nov 4, 2025 es martes)
+            start_time="09:00:00",
+            end_time="22:00:00",
+        )
+        db.add(disponibilidad_futura)
+        await db.flush()
+        print(f"✅ Availability creada: day_of_week={disponibilidad_futura.day_of_week} (MARTES)")
+        
+        # Booking FIJO para el 4 de noviembre 2025
+        fecha_booking = datetime(2025, 11, 4)  # 4 de noviembre 2025
+        
+        print(f"📅 BOOKING FIJO: {fecha_booking.strftime('%Y-%m-%d %A')}")
+        print(f"📋 AVAILABILITY: day_of_week={disponibilidad_futura.day_of_week}")
 
-        # Definir un horario dentro de la disponibilidad
-        clase_inicio = max(disponibilidad_futura.start_time, datetime.utcnow() + timedelta(days=1, hours=1))
+        # Convertir string de hora a datetime para el booking
+        hora_inicio = datetime.strptime(disponibilidad_futura.start_time, "%H:%M:%S").time()
+        clase_inicio = datetime.combine(fecha_booking.date(), hora_inicio)
         clase_fin = clase_inicio + timedelta(hours=1)
 
-        # Verificar si ya existe un booking idéntico
-        booking_q = await db.execute(
-            select(Booking).where(
-                Booking.user_id == alumno.id,
-                Booking.availability_id == disponibilidad_futura.id,
-                Booking.start_time == clase_inicio,
-                Booking.end_time == clase_fin,
-            )
+        # Crear booking nuevo
+        status_approved = (await db.execute(select(Status).where(Status.name == "approved"))).scalar_one_or_none()
+        booking = Booking(
+            user_id=alumno.id,
+            availability_id=disponibilidad_futura.id,
+            start_time=clase_inicio,
+            end_time=clase_fin,
+            status_id=status_approved.id if status_approved else None,
+            class_space="zoom"
         )
-        booking = booking_q.scalar_one_or_none()
-        if not booking:
-            # status para booking (usar "approved" si existe)
-            status_approved = (await db.execute(select(Status).where(Status.name == "approved"))).scalar_one_or_none()
-            booking = Booking(
-                user_id=alumno.id,
-                availability_id=disponibilidad_futura.id,
-                start_time=clase_inicio,
-                end_time=clase_fin,
-                status_id=status_approved.id if status_approved else None,
-                class_space="zoom"
-            )
-            db.add(booking)
-            await db.flush()
-            print("Booking de prueba creado.")
-        else:
-            print("El booking de prueba ya existe.")
+        db.add(booking)
+        await db.flush()
+        print(f"✅ Booking creado: {clase_inicio} - {clase_fin}")
 
         # =====================
         # PaymentBooking asociado
