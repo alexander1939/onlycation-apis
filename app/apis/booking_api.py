@@ -288,7 +288,7 @@ async def buscar_mis_clases(
         "has_more": result["has_more"],
     }
 
-@router.get("/booking/{booking_id}/detalle/", response_model=BookingDetailResponse, dependencies=[Depends(auth_required)])
+@router.get("/{booking_id}/detalle/", response_model=BookingDetailResponse, dependencies=[Depends(auth_required)])
 async def obtener_detalle_booking(
     booking_id: int,
     db: AsyncSession = Depends(get_db),

@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException
 from app.schemas.auths.logout_sheme import DefaultResponse, LogoutRequest
 from app.schemas.auths.refresh_token import RefreshTokenRequest
@@ -66,7 +65,7 @@ Ruta para iniciar sesión.
 """
 @router.post("/login/", response_model=LoginResponse, dependencies=[Depends(public_access)])
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
-    access_token, refresh_token, user = await login_user(db, request.email, request.password)# type: ignore
+    access_token, refresh_token, user, preference_id = await login_user(db, request.email, request.password)# type: ignore
     return {
         "success": True,
         "message": "Login exitoso",
@@ -78,6 +77,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "role": user.role.name if user.role else None,
+            "preference_id": preference_id,
         }
     }
 
