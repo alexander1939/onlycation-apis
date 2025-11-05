@@ -38,7 +38,7 @@ async def crear_docente():
                 email="docente_prueba@example.com",
                 password=get_password_hash("12345678"),  # Contraseña de prueba hasheada
                 role_id=1,  # Asume que 1 es el rol de docente
-                status_id=1  # Asume que 1 es status activo
+                status_id=2  # Asume que 1 es status activo
             )
             db.add(docente)
             await db.flush()  # Para obtener el id

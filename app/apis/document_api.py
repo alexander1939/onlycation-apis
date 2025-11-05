@@ -91,6 +91,62 @@ async def read_documents_route(
         ]
     )
 
+@router.get("/my-description/",
+    dependencies=[Depends(auth_required)])
+async def get_my_document_description(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Consultar solo la descripción del documento del usuario autenticado.
+    No requiere document_id, se obtiene automáticamente del token.
+    """
+    token = credentials.credentials
+    user_id = await get_user_id_from_token(token)
+    
+    q = await db.execute(
+        select(Document).where(Document.user_id == user_id)
+    )
+    doc = q.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="No tienes documentos registrados")
+    
+    return {
+        "success": True,
+        "message": "Descripción obtenida exitosamente",
+        "data": {
+            "description": doc.description
+        }
+    }
+
+@router.get("/my-expertise-area/",
+    dependencies=[Depends(auth_required)])
+async def get_my_document_expertise_area(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Consultar solo el área de especialidad del documento del usuario autenticado.
+    No requiere document_id, se obtiene automáticamente del token.
+    """
+    token = credentials.credentials
+    user_id = await get_user_id_from_token(token)
+    
+    q = await db.execute(
+        select(Document).where(Document.user_id == user_id)
+    )
+    doc = q.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="No tienes documentos registrados")
+    
+    return {
+        "success": True,
+        "message": "Área de especialidad obtenida exitosamente",
+        "data": {
+            "expertise_area": doc.expertise_area
+        }
+    }
+
 @router.put("/update/{document_id}/",
     response_model=DocumentCreateResponse,
     dependencies=[Depends(auth_required)])
@@ -130,6 +186,200 @@ async def update_document_route(
         return DocumentCreateResponse(
             success=True,
             message="Documento actualizado exitosamente",
+            data=DocumentCreateData(
+                id=document.id,
+                user_id=document.user_id,
+                rfc=document.rfc_cipher,
+                certificate=f"/api/documents/{document.id}/download/certificate",
+                curriculum=f"/api/documents/{document.id}/download/curriculum",
+                description=document.description,
+                expertise_area=document.expertise_area,
+                created_at=document.created_at
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.patch("/update-certificate/{document_id}/",
+    response_model=DocumentCreateResponse,
+    dependencies=[Depends(auth_required)])
+async def update_certificate_route(
+    document_id: int,
+    certificate: UploadFile = File(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualizar solo el certificado de un documento.
+    """
+    try:
+        await FileValidator.validate_file(certificate, file_type="pdf", max_size=10*1024*1024)
+        
+        token = credentials.credentials
+        document = await update_document_by_token(
+            db=db,
+            token=token,
+            document_id=document_id,
+            certificate_file=certificate
+        )
+        
+        return DocumentCreateResponse(
+            success=True,
+            message="Certificado actualizado exitosamente",
+            data=DocumentCreateData(
+                id=document.id,
+                user_id=document.user_id,
+                rfc=document.rfc_cipher,
+                certificate=f"/api/documents/{document.id}/download/certificate",
+                curriculum=f"/api/documents/{document.id}/download/curriculum",
+                description=document.description,
+                expertise_area=document.expertise_area,
+                created_at=document.created_at
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.patch("/update-curriculum/{document_id}/",
+    response_model=DocumentCreateResponse,
+    dependencies=[Depends(auth_required)])
+async def update_curriculum_route(
+    document_id: int,
+    curriculum: UploadFile = File(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualizar solo el currículum de un documento.
+    """
+    try:
+        await FileValidator.validate_file(curriculum, file_type="pdf", max_size=10*1024*1024)
+        
+        token = credentials.credentials
+        document = await update_document_by_token(
+            db=db,
+            token=token,
+            document_id=document_id,
+            curriculum_file=curriculum
+        )
+        
+        return DocumentCreateResponse(
+            success=True,
+            message="Currículum actualizado exitosamente",
+            data=DocumentCreateData(
+                id=document.id,
+                user_id=document.user_id,
+                rfc=document.rfc_cipher,
+                certificate=f"/api/documents/{document.id}/download/certificate",
+                curriculum=f"/api/documents/{document.id}/download/curriculum",
+                description=document.description,
+                expertise_area=document.expertise_area,
+                created_at=document.created_at
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.patch("/update-rfc/{document_id}/",
+    response_model=DocumentCreateResponse,
+    dependencies=[Depends(auth_required)])
+async def update_rfc_route(
+    document_id: int,
+    rfc: str = Form(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualizar solo el RFC de un documento.
+    """
+    try:
+        token = credentials.credentials
+        document = await update_document_by_token(
+            db=db,
+            token=token,
+            document_id=document_id,
+            rfc=rfc
+        )
+        
+        return DocumentCreateResponse(
+            success=True,
+            message="RFC actualizado exitosamente",
+            data=DocumentCreateData(
+                id=document.id,
+                user_id=document.user_id,
+                rfc=document.rfc_cipher,
+                certificate=f"/api/documents/{document.id}/download/certificate",
+                curriculum=f"/api/documents/{document.id}/download/curriculum",
+                description=document.description,
+                expertise_area=document.expertise_area,
+                created_at=document.created_at
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.patch("/update-description/{document_id}/",
+    response_model=DocumentCreateResponse,
+    dependencies=[Depends(auth_required)])
+async def update_description_route(
+    document_id: int,
+    description: str = Form(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualizar solo la descripción de un documento.
+    """
+    try:
+        token = credentials.credentials
+        document = await update_document_by_token(
+            db=db,
+            token=token,
+            document_id=document_id,
+            description=description
+        )
+        
+        return DocumentCreateResponse(
+            success=True,
+            message="Descripción actualizada exitosamente",
+            data=DocumentCreateData(
+                id=document.id,
+                user_id=document.user_id,
+                rfc=document.rfc_cipher,
+                certificate=f"/api/documents/{document.id}/download/certificate",
+                curriculum=f"/api/documents/{document.id}/download/curriculum",
+                description=document.description,
+                expertise_area=document.expertise_area,
+                created_at=document.created_at
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.patch("/update-expertise-area/{document_id}/",
+    response_model=DocumentCreateResponse,
+    dependencies=[Depends(auth_required)])
+async def update_expertise_area_route(
+    document_id: int,
+    expertise_area: str = Form(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualizar solo el área de especialidad de un documento.
+    """
+    try:
+        token = credentials.credentials
+        document = await update_document_by_token(
+            db=db,
+            token=token,
+            document_id=document_id,
+            expertise_area=expertise_area
+        )
+        
+        return DocumentCreateResponse(
+            success=True,
+            message="Área de especialidad actualizada exitosamente",
             data=DocumentCreateData(
                 id=document.id,
                 user_id=document.user_id,

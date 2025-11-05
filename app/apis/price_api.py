@@ -18,7 +18,9 @@ from app.services.teachers.price_service import (
     get_price_availability_by_token,
 )
 from app.apis.deps import auth_required, get_db
-
+from app.cores.token import verify_token
+from app.models.teachers.price import Price
+from sqlalchemy import select
 
 router = APIRouter()
 security = HTTPBearer()
@@ -105,3 +107,36 @@ async def get_price_availability_route(
         raise HTTPException(status_code=400, detail=str(e))
     except SQLAlchemyError:
         raise HTTPException(status_code=500, detail="Error al consultar la disponibilidad de precios")
+
+@router.get("/my-price/", dependencies=[Depends(auth_required)])
+async def get_my_hourly_price(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Consultar solo el precio por hora del docente autenticado.
+    No requiere parámetros, se obtiene automáticamente del token.
+    """
+    token = credentials.credentials
+    payload = verify_token(token)
+    user_id = payload.get("user_id")
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token inválido")
+    
+    # Buscar el precio del docente
+    result = await db.execute(
+        select(Price).where(Price.user_id == user_id)
+    )
+    price = result.scalar_one_or_none()
+    
+    if not price:
+        raise HTTPException(status_code=404, detail="No tienes precios registrados")
+    
+    return {
+        "success": True,
+        "message": "Precio obtenido exitosamente",
+        "data": {
+            "price": price.selected_prices
+        }
+    }
