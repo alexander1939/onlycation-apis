@@ -6,6 +6,7 @@ class ActivationCheckData(BaseModel):
     has_preference: bool
     has_price: bool
     has_wallet: bool
+    has_availability: bool
     has_video: bool
     has_documents: bool
     missing: List[str]

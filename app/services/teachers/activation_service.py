@@ -10,6 +10,7 @@ from app.models.teachers.wallet import Wallet
 from app.models.teachers.video import Video
 from app.models.teachers.document import Document
 from app.models.common.status import Status
+from app.models.teachers.availability import Availability
 
 
 async def _get_user_id_from_token(token: str) -> int:
@@ -45,6 +46,10 @@ async def check_teacher_activation_requirements(db: AsyncSession, token: str) ->
     wallet = wallet_q.scalars().first()
     has_wallet = wallet is not None and bool(wallet.stripe_account_id)
 
+    # Availability (al menos un registro de disponibilidad)
+    availability_q = await db.execute(select(Availability.id).where(Availability.user_id == user_id))
+    has_availability = availability_q.scalars().first() is not None
+
     # Video
     video_q = await db.execute(select(Video).where(Video.user_id == user_id))
     has_video = video_q.scalars().first() is not None
@@ -60,6 +65,8 @@ async def check_teacher_activation_requirements(db: AsyncSession, token: str) ->
         missing.append("price")
     if not has_wallet:
         missing.append("wallet")
+    if not has_availability:
+        missing.append("availability")
     if not has_video:
         missing.append("video")
     if not has_documents:
@@ -69,6 +76,7 @@ async def check_teacher_activation_requirements(db: AsyncSession, token: str) ->
         "has_preference": has_preference,
         "has_price": has_price,
         "has_wallet": has_wallet,
+        "has_availability": has_availability,
         "has_video": has_video,
         "has_documents": has_documents,
         "missing": missing,
