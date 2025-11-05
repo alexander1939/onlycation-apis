@@ -154,6 +154,10 @@ def create_app() -> FastAPI:
 
     # Agregar middleware de seguridad
     app.add_middleware(SecurityHeadersMiddleware)
+    
+    # Aplicar rate limiting global a todas las rutas
+    from slowapi.middleware import SlowAPIMiddleware
+    app.add_middleware(SlowAPIMiddleware)
 
     origins = [
         "http://localhost:5173/",
