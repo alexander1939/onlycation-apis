@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import and_, or_
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time as dt_time
 from typing import Dict, List, Optional
 import logging
 from fastapi import HTTPException
@@ -85,6 +85,21 @@ async def get_teacher_weekly_agenda(
         booking_result = await db.execute(booking_query)
         bookings = booking_result.scalars().all()
         
+        logger.info(f"=" * 60)
+        logger.info(f"🔍 AGENDA DEL DOCENTE {teacher_id}")
+        logger.info(f"📅 Rango de semana: {week_start_date.strftime('%Y-%m-%d')} a {week_end_date.strftime('%Y-%m-%d')}")
+        logger.info(f"📋 Total availabilities encontradas: {len(availabilities)}")
+        logger.info(f"🎫 Total bookings encontrados: {len(bookings)}")
+        
+        if bookings:
+            logger.info(f"📝 DETALLES DE BOOKINGS:")
+            for b in bookings:
+                logger.info(f"   - Booking {b.id}: {b.start_time} - {b.end_time} | Status: {b.status.name if b.status else 'None'} | Availability ID: {b.availability_id}")
+        else:
+            logger.info(f"⚠️  NO SE ENCONTRARON BOOKINGS EN ESTE RANGO DE FECHAS")
+        
+        logger.info(f"=" * 60)
+        
         # 3. Construir la agenda semanal (lunes a domingo)
         days = []
         day_names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
@@ -135,8 +150,8 @@ def generate_time_slots(availability: Availability, bookings: List[Booking]) -> 
     Generar slots de tiempo por horas exactas para una disponibilidad
     """
     slots = []
-    current_time = availability.start_time.replace(minute=0, second=0, microsecond=0)
-    end_time = availability.end_time
+    current_time = availability.start_time  # Ya es datetime
+    end_time = availability.end_time  # Ya es datetime
     
     # Generar slots de 1 hora
     while current_time < end_time:
@@ -148,7 +163,8 @@ def generate_time_slots(availability: Availability, bookings: List[Booking]) -> 
         
         for booking in bookings:
             # Verificar si hay overlap entre el slot y la reserva
-            if (booking.start_time < slot_end and booking.end_time > current_time and
+            if (booking.start_time < slot_end and 
+                booking.end_time > current_time and
                 booking.availability_id == availability.id):
                 is_occupied = True
                 booking_status = booking.status.name if booking.status else "occupied"
@@ -163,17 +179,28 @@ def generate_time_slots(availability: Availability, bookings: List[Booking]) -> 
         slot = {
             "start_time": current_time.strftime('%H:%M'),
             "end_time": slot_end.strftime('%H:%M'),
-            "datetime_start": current_time.isoformat(),
-            "datetime_end": slot_end.isoformat(),
             "status": status,
-            "availability_id": availability.id,
-            "duration_hours": 1
+            "availability_id": availability.id
         }
         
         slots.append(slot)
         current_time = slot_end
     
     return slots
+
+def dt_time_to_datetime(time_obj):
+    """
+    Convertir time a datetime si es necesario
+    Si ya es datetime, devolver tal cual
+    """
+    from datetime import time as dt_time
+    
+    if isinstance(time_obj, datetime):
+        return time_obj
+    elif isinstance(time_obj, dt_time):
+        return datetime.combine(datetime.now().date(), time_obj)
+    else:
+        return time_obj
 
 async def get_teacher_availability_summary(
     db: AsyncSession,
@@ -214,7 +241,7 @@ async def get_teacher_availability_summary(
         
         # Calcular estadísticas
         total_hours_available = sum(
-            (av.end_time - av.start_time).total_seconds() / 3600 
+            (dt_time_to_datetime(av.end_time) - dt_time_to_datetime(av.start_time)).total_seconds() / 3600 
             for av in availabilities
         )
         
@@ -246,21 +273,40 @@ async def get_teacher_availability_summary(
 async def get_public_teacher_weekly_agenda(
     db: AsyncSession,
     teacher_id: int,
-    week_start_date: Optional[datetime] = None
+    week_start_date: Optional[str] = None
 ) -> Dict:
     """
-    Obtener la agenda semanal pública de cualquier docente (lunes a domingo)
+    Obtener la agenda pública del docente (puede ser semanal o rango personalizado)
+    
+    week_start_date puede ser:
+    - None: usa semana actual
+    - 'YYYY-MM-DD': usa esa fecha como inicio de semana (lunes a domingo)
+    - 'YYYY-MM-DD,YYYY-MM-DD': usa rango personalizado (start_date,end_date)
     """
     try:
-        # Configurar fechas de la semana (lunes a domingo)
+        # Configurar fechas del rango
         if not week_start_date:
-            current_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)  # Mexico time
-            # Encontrar el lunes de esta semana
+            # Usar semana actual
+            current_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)
             days_since_monday = current_date.weekday()
-            week_start_date = current_date - timedelta(days=days_since_monday)
-        
-        week_start_date = week_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_end_date = week_start_date + timedelta(days=6)  # Domingo
+            week_start = current_date - timedelta(days=days_since_monday)
+            week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+            week_end_date = week_start + timedelta(days=6)
+            num_days = 7
+        elif ',' in week_start_date:
+            # Rango personalizado: 'start_date,end_date'
+            start_str, end_str = week_start_date.split(',')
+            week_start = datetime.strptime(start_str.strip(), "%Y-%m-%d")
+            week_end_date = datetime.strptime(end_str.strip(), "%Y-%m-%d")
+            num_days = (week_end_date - week_start).days + 1
+        else:
+            # Semana específica (lunes a domingo)
+            week_start = datetime.strptime(week_start_date, "%Y-%m-%d")
+            days_since_monday = week_start.weekday()
+            week_start = week_start - timedelta(days=days_since_monday)
+            week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+            week_end_date = week_start + timedelta(days=6)
+            num_days = 7
         
         # Verificar que el docente existe y cargar su rol
         teacher_query = select(User).options(
@@ -279,57 +325,121 @@ async def get_public_teacher_weekly_agenda(
         if not teacher.role or teacher.role.name != "teacher":
             raise HTTPException(status_code=403, detail=f"El usuario especificado no es un docente. Rol actual: {role_name}")
         
-        # 1. Obtener disponibilidades del docente en el rango de fechas
+        # 1. Obtener TODAS las disponibilidades del docente (son recurrentes por día de semana)
         availability_query = select(Availability).options(
             selectinload(Availability.preference)
         ).where(
-            Availability.user_id == teacher_id,
-            Availability.start_time >= week_start_date,
-            Availability.start_time <= week_end_date
-        ).order_by(Availability.start_time)
+            Availability.user_id == teacher_id
+        ).order_by(Availability.day_of_week, Availability.start_time)
         
         availability_result = await db.execute(availability_query)
-        availabilities = availability_result.scalars().all()
+        all_availabilities = availability_result.scalars().all()
         
-        # 2. Obtener reservas ocupadas del docente en el rango de fechas
+        # 2. Obtener reservas ocupadas del docente en el rango de fechas específico
         # Solo incluir bookings con status activos (no cancelados, inactivos, etc.)
         booking_query = select(Booking).options(
             selectinload(Booking.availability),
             selectinload(Booking.status)
         ).join(Availability).join(Status).where(
             Availability.user_id == teacher_id,
-            Booking.start_time >= week_start_date,
-            Booking.start_time <= week_end_date,
+            Booking.start_time >= week_start,
+            Booking.start_time <= week_end_date + timedelta(days=1),
             Status.name.in_(["active", "approved", "paid", "occupied"])
         ).order_by(Booking.start_time)
         
         booking_result = await db.execute(booking_query)
         bookings = booking_result.scalars().all()
         
-        # 3. Construir la agenda semanal (lunes a domingo)
+        logger.info(f"=" * 60)
+        logger.info(f"🔍 AGENDA PÚBLICA DEL DOCENTE {teacher_id}")
+        logger.info(f"📅 Rango de semana: {week_start.strftime('%Y-%m-%d')} a {week_end_date.strftime('%Y-%m-%d')}")
+        logger.info(f"📋 Total availabilities encontradas: {len(all_availabilities)}")
+        logger.info(f"🎫 Total bookings encontrados: {len(bookings)}")
+        
+        if bookings:
+            logger.info(f"📝 DETALLES DE BOOKINGS:")
+            for b in bookings:
+                logger.info(f"   - Booking {b.id}: {b.start_time} - {b.end_time} | Status: {b.status.name if b.status else 'None'} | Availability ID: {b.availability_id}")
+        else:
+            logger.info(f"⚠️  NO SE ENCONTRARON BOOKINGS EN ESTE RANGO DE FECHAS")
+        
+        logger.info(f"=" * 60)
+        
+        # 3. Construir la agenda (días del rango especificado)
         days = []
         day_names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-        current_date = week_start_date
+        current_date = week_start
         
-        for i in range(7):  # 7 días de la semana
+        for i in range(num_days):  # Iterar sobre el número de días del rango
+            # Mapear día de la semana (Python: 0=Monday, 1=Tuesday...)
+            # Pero nuestro sistema usa 1=Monday, 2=Tuesday...
+            python_weekday = current_date.weekday()  # 0=Monday, 1=Tuesday, ..., 6=Sunday
+            our_day_of_week = python_weekday + 1 if python_weekday < 6 else 7  # 1=Monday, 2=Tuesday, ..., 7=Sunday
+            
+            logger.info(f"📅 Procesando fecha: {current_date.strftime('%Y-%m-%d')} (%A) | Python weekday: {python_weekday} | Nuestro day_of_week: {our_day_of_week}")
+            
+            # Filtrar disponibilidades para este día de la semana
             day_availabilities = [
-                av for av in availabilities 
-                if av.start_time.date() == current_date.date()
+                av for av in all_availabilities 
+                if av.day_of_week == our_day_of_week
             ]
+            
+            logger.info(f"📋 Disponibilidades encontradas para día {our_day_of_week}: {len(day_availabilities)}")
+            
+            # Filtrar bookings para esta fecha específica
             day_bookings = [
                 booking for booking in bookings 
                 if booking.start_time.date() == current_date.date()
             ]
             
+            logger.info(f"📅 Bookings encontrados para fecha {current_date.strftime('%Y-%m-%d')}: {len(day_bookings)}")
+            
             # Generar slots de tiempo para este día
             day_slots = []
             for availability in day_availabilities:
-                slots = generate_time_slots(availability, day_bookings)
-                day_slots.extend(slots)
+                # Convertir strings de hora a datetime para este día específico
+                start_time_obj = datetime.strptime(availability.start_time, "%H:%M:%S").time()
+                end_time_obj = datetime.strptime(availability.end_time, "%H:%M:%S").time()
+                
+                # Crear datetime completo para este día
+                slot_start = datetime.combine(current_date.date(), start_time_obj)
+                slot_end = datetime.combine(current_date.date(), end_time_obj)
+                
+                # Verificar si este slot está ocupado por alguna reserva
+                is_occupied = False
+                booking_status = None
+                
+                for booking in day_bookings:
+                    logger.info(f"🔍 Comparando booking {booking.id}: {booking.start_time} - {booking.end_time} (status: {booking.status.name if booking.status else 'None'}) con slot {slot_start} - {slot_end}")
+                    
+                    # Verificar si hay overlap entre el slot y la reserva
+                    if (booking.start_time < slot_end and 
+                        booking.end_time > slot_start and
+                        booking.availability_id == availability.id):
+                        is_occupied = True
+                        booking_status = booking.status.name if booking.status else "occupied"
+                        logger.info(f"✅ OVERLAP DETECTADO! Booking {booking.id} ocupa este slot. Status: {booking_status}")
+                        break
+                
+                # Determinar el estado del slot
+                if is_occupied:
+                    status = "occupied" if booking_status in ["confirmed", "active", "approved", "paid"] else "pending"
+                    logger.info(f"🔴 Slot {availability.start_time[:5]}-{availability.end_time[:5]} marcado como: {status}")
+                else:
+                    status = "available"
+                
+                slot = {
+                    "start_time": availability.start_time[:5],  # "09:00"
+                    "end_time": availability.end_time[:5],      # "10:00"
+                    "status": status,
+                    "availability_id": availability.id
+                }
+                
+                day_slots.append(slot)
             
             days.append({
                 "date": current_date.strftime("%Y-%m-%d"),
-                "day_name": day_names[i],
+                "day_name": day_names[python_weekday],
                 "slots": day_slots,
                 "total_slots": len(day_slots),
                 "available_slots": len([s for s in day_slots if s["status"] == "available"]),
@@ -341,11 +451,11 @@ async def get_public_teacher_weekly_agenda(
         return {
             "teacher_id": teacher_id,
             "teacher_name": f"{teacher.first_name} {teacher.last_name}",
-            "week_start": week_start_date.strftime("%Y-%m-%d"),
+            "week_start": week_start.strftime("%Y-%m-%d"),
             "week_end": week_end_date.strftime("%Y-%m-%d"),
             "days": days,
             "summary": {
-                "total_days": 7,
+                "total_days": num_days,
                 "days_with_availability": len([d for d in days if d["total_slots"] > 0]),
                 "total_slots": sum(d["total_slots"] for d in days),
                 "available_slots": sum(d["available_slots"] for d in days),
@@ -366,6 +476,7 @@ async def create_teacher_availability(
 ) -> Dict:
     """
     Crear nueva disponibilidad para el docente autenticado
+    Acepta: day_of_week (Monday, Tuesday, etc. o número) y horas (09:00 o 2025-11-04T09:00:00)
     """
     try:
         
@@ -377,49 +488,93 @@ async def create_teacher_availability(
             if field not in availability_data:
                 raise HTTPException(status_code=400, detail=f"Campo requerido: {field}")
         
-        # Convertir strings de fecha/hora a datetime
-        from datetime import datetime
-        start_time = datetime.fromisoformat(availability_data["start_time"].replace("Z", "+00:00"))
-        end_time = datetime.fromisoformat(availability_data["end_time"].replace("Z", "+00:00"))
+        # Convertir strings a datetime (soporta ambos formatos)
+        from datetime import datetime, time as dt_time
+        
+        reference_date = datetime.today()
+        
+        # Parsear start_time (soporta "09:00" o "2025-11-04T09:00:00")
+        try:
+            start_time_str = availability_data["start_time"]
+            end_time_str = availability_data["end_time"]
+            
+            # Detectar si es formato ISO completo o solo hora
+            if "T" in start_time_str or len(start_time_str) > 8:
+                # Formato completo: "2025-11-04T09:00:00"
+                start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+            elif ":" in start_time_str:
+                # Formato solo hora: "09:00"
+                parts = start_time_str.split(":")
+                hour = int(parts[0])
+                minute = int(parts[1]) if len(parts) > 1 else 0
+                start_time = datetime.combine(reference_date, dt_time(hour=hour, minute=minute))
+            else:
+                raise ValueError("Formato inválido")
+            
+            # Mismo proceso para end_time
+            if "T" in end_time_str or len(end_time_str) > 8:
+                # Formato completo: "2025-11-04T15:00:00"
+                end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+            elif ":" in end_time_str:
+                # Formato solo hora: "15:00"
+                parts = end_time_str.split(":")
+                hour = int(parts[0])
+                minute = int(parts[1]) if len(parts) > 1 else 0
+                end_time = datetime.combine(reference_date, dt_time(hour=hour, minute=minute))
+            else:
+                raise ValueError("Formato inválido")
+                
+        except (ValueError, IndexError) as e:
+            raise HTTPException(
+                status_code=400, 
+                detail="Formato de hora inválido. Use HH:MM (ej: 09:00) o ISO (ej: 2025-11-04T09:00:00)"
+            )
         
         # Validar que start_time sea antes que end_time
         if start_time >= end_time:
             raise HTTPException(status_code=400, detail="La hora de inicio debe ser anterior a la hora de fin")
         
-        # Validar que start_time y end_time estén en la misma fecha
-        if start_time.date() != end_time.date():
-            raise HTTPException(status_code=400, detail="La hora de inicio y fin deben estar en la misma fecha")
-        
-        # Validar que las horas sean exactas (sin minutos ni segundos)
+        # Validar que las horas sean exactas (sin minutos)
         if start_time.minute != 0 or start_time.second != 0 or start_time.microsecond != 0:
-            raise HTTPException(status_code=400, detail="La hora de inicio debe ser una hora exacta (ej: 10:00:00)")
+            raise HTTPException(status_code=400, detail="La hora de inicio debe ser una hora exacta (ej: 09:00, 10:00)")
         
         if end_time.minute != 0 or end_time.second != 0 or end_time.microsecond != 0:
-            raise HTTPException(status_code=400, detail="La hora de fin debe ser una hora exacta (ej: 13:00:00)")
+            raise HTTPException(status_code=400, detail="La hora de fin debe ser una hora exacta (ej: 10:00, 13:00)")
+        
+        # Convertir datetime a string para guardar (modelo usa String)
+        start_time_str_db = start_time.strftime("%H:%M:%S")
+        end_time_str_db = end_time.strftime("%H:%M:%S")
         
         # Verificar que no haya conflictos con disponibilidades existentes
         existing_query = select(Availability).where(
             Availability.user_id == teacher_id,
-            Availability.day_of_week == availability_data["day_of_week"],
-            Availability.start_time < end_time,
-            Availability.end_time > start_time
+            Availability.day_of_week == availability_data["day_of_week"]
         )
         existing_result = await db.execute(existing_query)
-        existing_availability = existing_result.scalar_one_or_none()
+        existing_availabilities = existing_result.scalars().all()
         
-        if existing_availability:
-            raise HTTPException(
-                status_code=409, 
-                detail="Ya existe una disponibilidad que se superpone con este horario"
-            )
+        # Comparar manualmente los horarios (strings)
+        for existing in existing_availabilities:
+            # Convertir strings de BD a datetime para comparar
+            existing_start = datetime.strptime(existing.start_time, "%H:%M:%S").time()
+            existing_end = datetime.strptime(existing.end_time, "%H:%M:%S").time()
+            new_start = start_time.time()
+            new_end = end_time.time()
+            
+            # Verificar overlap
+            if existing_start < new_end and existing_end > new_start:
+                raise HTTPException(
+                    status_code=409, 
+                    detail="Ya existe una disponibilidad que se superpone con este horario"
+                )
         
-        # Crear nueva disponibilidad
+        # Crear nueva disponibilidad con strings
         new_availability = Availability(
             user_id=teacher_id,
             preference_id=availability_data["preference_id"],
             day_of_week=availability_data["day_of_week"],
-            start_time=start_time,
-            end_time=end_time
+            start_time=start_time_str_db,  # String: "09:00:00"
+            end_time=end_time_str_db       # String: "10:00:00"
         )
         
         db.add(new_availability)
@@ -431,8 +586,8 @@ async def create_teacher_availability(
             "user_id": new_availability.user_id,
             "preference_id": new_availability.preference_id,
             "day_of_week": new_availability.day_of_week,
-            "start_time": new_availability.start_time.isoformat(),
-            "end_time": new_availability.end_time.isoformat(),
+            "start_time": new_availability.start_time[:5],  # "09:00:00" -> "09:00"
+            "end_time": new_availability.end_time[:5],      # "10:00:00" -> "10:00"
             "created_at": new_availability.created_at.isoformat()
         }
         
@@ -482,16 +637,13 @@ async def update_teacher_availability(
         
         # Validar y actualizar campos si se proporcionan
         if "start_time" in availability_data and "end_time" in availability_data:
-            from datetime import datetime
-            start_time = datetime.fromisoformat(availability_data["start_time"].replace("Z", "+00:00"))
-            end_time = datetime.fromisoformat(availability_data["end_time"].replace("Z", "+00:00"))
+            from datetime import time as dt_time
+            start_time = dt_time.fromisoformat(availability_data["start_time"])
+            end_time = dt_time.fromisoformat(availability_data["end_time"])
             
             # Validaciones de tiempo
             if start_time >= end_time:
                 raise HTTPException(status_code=400, detail="La hora de inicio debe ser anterior a la hora de fin")
-            
-            if start_time.date() != end_time.date():
-                raise HTTPException(status_code=400, detail="La hora de inicio y fin deben estar en la misma fecha")
             
             if start_time.minute != 0 or start_time.second != 0 or start_time.microsecond != 0:
                 raise HTTPException(status_code=400, detail="La hora de inicio debe ser una hora exacta")
@@ -533,8 +685,8 @@ async def update_teacher_availability(
             "user_id": availability.user_id,
             "preference_id": availability.preference_id,
             "day_of_week": availability.day_of_week,
-            "start_time": availability.start_time.isoformat(),
-            "end_time": availability.end_time.isoformat(),
+            "start_time": availability.start_time.strftime("%H:%M"),
+            "end_time": availability.end_time.strftime("%H:%M"),
             "updated_at": availability.updated_at.isoformat()
         }
         
@@ -589,4 +741,87 @@ async def delete_teacher_availability(
     except Exception as e:
         await db.rollback()
         logger.error(f"Error eliminando disponibilidad: {e}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+async def get_teacher_availability_list(
+    db: AsyncSession,
+    user_data: dict
+) -> Dict:
+    """
+    Obtener lista de disponibilidades del docente
+    Muestra día de la semana, hora de inicio y hora de fin
+    """
+    try:
+        teacher_id = user_data["user_id"]
+        
+        # Verificar que el usuario sea docente
+        if user_data.get("role") != "teacher":
+            raise HTTPException(status_code=403, detail="Solo los docentes pueden acceder a esta funcionalidad")
+        
+        # Obtener todas las disponibilidades del docente
+        query = select(Availability).where(
+            Availability.user_id == teacher_id
+        ).order_by(Availability.day_of_week, Availability.start_time)
+        
+        result = await db.execute(query)
+        availabilities = result.scalars().all()
+        
+        if not availabilities:
+            return {
+                "teacher_id": teacher_id,
+                "total_availabilities": 0,
+                "availabilities": []
+            }
+        
+        # Mapeo de números a nombres de días (1-based: 1=Monday, 2=Tuesday, etc.)
+        day_names = {
+            1: "Monday",
+            2: "Tuesday",
+            3: "Wednesday",
+            4: "Thursday",
+            5: "Friday",
+            6: "Saturday",
+            7: "Sunday",
+            0: "Monday"  # Por compatibilidad si alguien usa 0
+        }
+        
+        # Formatear las disponibilidades
+        availability_list = []
+        for av in availabilities:
+            # Si day_of_week es string, usarlo directamente; si es int, convertir
+            if isinstance(av.day_of_week, int):
+                day_name = day_names.get(av.day_of_week, str(av.day_of_week))
+            else:
+                day_name = av.day_of_week
+            
+            # Si start_time/end_time son strings, usarlos directamente
+            # Si son datetime, extraer solo la hora
+            if isinstance(av.start_time, str):
+                start_time = av.start_time[:5]  # "09:00:00" -> "09:00"
+            else:
+                start_time = av.start_time.strftime("%H:%M")
+            
+            if isinstance(av.end_time, str):
+                end_time = av.end_time[:5]  # "10:00:00" -> "10:00"
+            else:
+                end_time = av.end_time.strftime("%H:%M")
+            
+            availability_list.append({
+                "id": av.id,
+                "day_of_week": day_name,
+                "start_time": start_time,
+                "end_time": end_time,
+                "preference_id": av.preference_id
+            })
+        
+        return {
+            "teacher_id": teacher_id,
+            "total_availabilities": len(availability_list),
+            "availabilities": availability_list
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo lista de disponibilidades: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
