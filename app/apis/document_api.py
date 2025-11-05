@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from app.apis.deps import auth_required, get_db
 from app.services.teachers.document_service import (
-    create_document_by_token, get_documents_by_token, get_user_id_from_token
+    create_document_by_token, get_documents_by_token, get_user_id_from_token,
+    update_document_by_token
 )
 from app.schemas.teachers.document_schema import DocumentCreateResponse, DocumentCreateData, DocumentReadResponse
 from app.models import Document
@@ -83,11 +84,65 @@ async def read_documents_route(
                 rfc=decrypt_text(d.rfc_cipher),
                 certificate=f"/api/documents/{d.id}/download/certificate",
                 curriculum=f"/api/documents/{d.id}/download/curriculum",
+                description=d.description,
                 expertise_area=d.expertise_area,
                 created_at=d.created_at
             ) for d in docs
         ]
     )
+
+@router.put("/update/{document_id}/",
+    response_model=DocumentCreateResponse,
+    dependencies=[Depends(auth_required)])
+async def update_document_route(
+    document_id: int,
+    rfc: str = Form(None),
+    expertise_area: str = Form(None),
+    description: str = Form(None),
+    certificate: UploadFile = File(None),
+    curriculum: UploadFile = File(None),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualizar un documento existente.
+    Todos los campos son opcionales. Solo se actualizan los campos proporcionados.
+    """
+    try:
+        # Validar archivos si se proporcionan
+        if certificate:
+            await FileValidator.validate_file(certificate, file_type="pdf", max_size=10*1024*1024)
+        if curriculum:
+            await FileValidator.validate_file(curriculum, file_type="pdf", max_size=10*1024*1024)
+        
+        token = credentials.credentials
+        document = await update_document_by_token(
+            db=db,
+            token=token,
+            document_id=document_id,
+            rfc=rfc,
+            expertise_area=expertise_area,
+            description=description,
+            certificate_file=certificate,
+            curriculum_file=curriculum
+        )
+        
+        return DocumentCreateResponse(
+            success=True,
+            message="Documento actualizado exitosamente",
+            data=DocumentCreateData(
+                id=document.id,
+                user_id=document.user_id,
+                rfc=document.rfc_cipher,
+                certificate=f"/api/documents/{document.id}/download/certificate",
+                curriculum=f"/api/documents/{document.id}/download/curriculum",
+                description=document.description,
+                expertise_area=document.expertise_area,
+                created_at=document.created_at
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # -------- Descarga segura (descifra al vuelo) --------
 

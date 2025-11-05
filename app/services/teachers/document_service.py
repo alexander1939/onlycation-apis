@@ -129,3 +129,71 @@ async def get_documents_by_token(db: AsyncSession, token: str) -> list[Document]
     user_id = await get_user_id_from_token(token)
     res = await db.execute(select(Document).where(Document.user_id == user_id))
     return res.scalars().all()
+
+async def update_document_by_token(
+    db: AsyncSession,
+    token: str,
+    document_id: int,
+    rfc: str = None,
+    expertise_area: str = None,
+    description: str = None,
+    certificate_file: UploadFile = None,
+    curriculum_file: UploadFile = None
+) -> Document:
+    """
+    Actualizar un documento existente. Los archivos son opcionales.
+    Si se envían nuevos archivos, se reemplazan los antiguos.
+    """
+    user_id = await get_user_id_from_token(token)
+    
+    # Obtener documento existente y verificar propiedad
+    q = await db.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.user_id == user_id
+        )
+    )
+    document = q.scalar_one_or_none()
+    if not document:
+        raise ValueError("Documento no encontrado o no tienes permisos para actualizarlo")
+    
+    # Actualizar campos de texto si se proporcionan
+    if rfc is not None:
+        await _validate_text_field(rfc, "RFC")
+        # Verificar que el nuevo RFC no esté ya registrado (excepto el actual)
+        new_rfc_hash = rfc_hash_plain(rfc)
+        if new_rfc_hash != document.rfc_hash:
+            await _validate_unique_rfc_hash(db, new_rfc_hash)
+            document.rfc_hash = new_rfc_hash
+            document.rfc_cipher = encrypt_text(rfc.strip().upper())
+    
+    if expertise_area is not None:
+        await _validate_text_field(expertise_area, "Área de especialidad")
+        document.expertise_area = expertise_area.strip()
+    
+    if description is not None:
+        await _validate_description(description, "Descripción")
+        document.description = description.strip()
+    
+    # Actualizar archivos si se proporcionan
+    if certificate_file is not None:
+        await _validate_file(certificate_file, "Certificado")
+        # Eliminar archivo anterior si existe
+        if document.certificate and os.path.exists(document.certificate):
+            os.remove(document.certificate)
+        # Guardar nuevo archivo cifrado
+        document.certificate = await _save_encrypted_file(certificate_file, UPLOAD_DIR)
+    
+    if curriculum_file is not None:
+        await _validate_file(curriculum_file, "Currículum")
+        # Eliminar archivo anterior si existe
+        if document.curriculum and os.path.exists(document.curriculum):
+            os.remove(document.curriculum)
+        # Guardar nuevo archivo cifrado
+        document.curriculum = await _save_encrypted_file(curriculum_file, UPLOAD_DIR)
+    
+    document.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(document)
+    return document
