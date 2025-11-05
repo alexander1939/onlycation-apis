@@ -18,6 +18,8 @@ from app.services.externals.youtube_service import (
     update_user_video,
     get_user_videos,
 )
+from app.models.teachers.video import Video
+from sqlalchemy import select
 
 router = APIRouter()
 
@@ -258,6 +260,36 @@ async def get_my_videos(
             status_code=500,
             detail=f"❌ Error interno al obtener los videos. Por favor, intenta nuevamente o contacta soporte si el problema persiste."
         )
+
+
+@router.get("/my-video-url/", dependencies=[Depends(auth_required)])
+async def get_my_video_url(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(auth_required)
+):
+    """
+    Consultar solo la URL del video del docente autenticado.
+    No requiere parámetros, se obtiene automáticamente del token.
+    """
+    user_id = current_user["user_id"]
+    
+    # Buscar el video del docente
+    result = await db.execute(
+        select(Video).where(Video.user_id == user_id)
+    )
+    video = result.scalar_one_or_none()
+    
+    if not video:
+        raise HTTPException(status_code=404, detail="No tienes video de presentación registrado")
+    
+    return {
+        "success": True,
+        "message": "Video obtenido exitosamente",
+        "data": {
+            "embed_url": video.embed_url,
+            "original_url": video.original_url
+        }
+    }
 
 
 @router.put("/my", response_model=VideoUpdateResponse)

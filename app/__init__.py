@@ -128,7 +128,7 @@ async def lifespan(app: FastAPI):
     await create_premium_plan()
     await create_free_plan()
     await create_benefit()
-    await crear_docente()
+    await crear_docente()  # Comentado: solo para testing, borra datos en cada inicio
     await create_categories()
 
     yield
@@ -154,6 +154,10 @@ def create_app() -> FastAPI:
 
     # Agregar middleware de seguridad
     app.add_middleware(SecurityHeadersMiddleware)
+    
+    # Aplicar rate limiting global a todas las rutas
+    from slowapi.middleware import SlowAPIMiddleware
+    app.add_middleware(SlowAPIMiddleware)
 
     origins = [
         "http://localhost:5173/",

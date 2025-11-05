@@ -19,8 +19,9 @@ from datetime import datetime, timedelta, time
 from app.models.common.stripe_price import StripePrice
 from app.external.stripe_config import stripe_config
 import stripe
-from app.cores.security import get_password_hash
+from app.cores.security import get_password_hash, rfc_hash_plain, encrypt_text, encrypt_bytes
 from app.models.common.status import Status
+import os
 
 
 async def crear_docente():
@@ -37,7 +38,7 @@ async def crear_docente():
                 email="docente_prueba@example.com",
                 password=get_password_hash("12345678"),  # Contraseña de prueba hasheada
                 role_id=1,  # Asume que 1 es el rol de docente
-                status_id=1  # Asume que 1 es status activo
+                status_id=2  # Asume que 1 es status activo
             )
             db.add(docente)
             await db.flush()  # Para obtener el id
@@ -329,6 +330,19 @@ async def crear_docente():
         # BOOKING DE PRUEBA
         # =====================
         
+        # ELIMINAR DOCUMENTOS ANTIGUOS del docente
+        old_docs = await db.execute(select(Document).where(Document.user_id == docente.id))
+        docs_to_delete = old_docs.scalars().all()
+        for old_doc in docs_to_delete:
+            # Eliminar archivos físicos si existen
+            if old_doc.certificate and os.path.exists(old_doc.certificate):
+                os.remove(old_doc.certificate)
+            if old_doc.curriculum and os.path.exists(old_doc.curriculum):
+                os.remove(old_doc.curriculum)
+            await db.delete(old_doc)
+        await db.flush()
+        print(f"🗑️  Eliminados {len(docs_to_delete)} documentos antiguos")
+        
         # ELIMINAR BOOKINGS ANTIGUOS para empezar limpio
         delete_bookings = await db.execute(
             select(Booking).join(Availability).where(Availability.user_id == docente.id)
@@ -380,6 +394,60 @@ async def crear_docente():
         db.add(disponibilidad_futura)
         await db.flush()
         print(f"✅ Availability creada: day_of_week={disponibilidad_futura.day_of_week} (MARTES)")
+        
+        # =====================
+        # Documento del docente CON CIFRADO REAL
+        # =====================
+        from app.cores.security import rfc_hash_plain, encrypt_text, encrypt_bytes
+        
+        # Crear directorio si no existe
+        os.makedirs("uploads/documents", exist_ok=True)
+        
+        # Leer y cifrar el certificado (3.pdf)
+        certificate_source = "3.pdf"
+        if os.path.exists(certificate_source):
+            with open(certificate_source, "rb") as f:
+                cert_data = f.read()
+            cert_encrypted = encrypt_bytes(cert_data)
+            certificate_path = f"uploads/documents/certificate_{docente.id}.enc"
+            with open(certificate_path, "wb") as f:
+                f.write(cert_encrypted)
+            print(f"✅ Certificado cifrado: {certificate_path}")
+        else:
+            certificate_path = None
+            print(f"⚠️  Archivo {certificate_source} no encontrado")
+        
+        # Leer y cifrar el currículum (100.pdf)
+        curriculum_source = "100.pdf"
+        if os.path.exists(curriculum_source):
+            with open(curriculum_source, "rb") as f:
+                curr_data = f.read()
+            curr_encrypted = encrypt_bytes(curr_data)
+            curriculum_path = f"uploads/documents/curriculum_{docente.id}.enc"
+            with open(curriculum_path, "wb") as f:
+                f.write(curr_encrypted)
+            print(f"✅ Currículum cifrado: {curriculum_path}")
+        else:
+            curriculum_path = None
+            print(f"⚠️  Archivo {curriculum_source} no encontrado")
+        
+        # Crear documento solo si ambos archivos existen
+        if certificate_path and curriculum_path:
+            test_rfc = "DOPE850101ABC"
+            doc = Document(
+                user_id=docente.id,
+                rfc_hash=rfc_hash_plain(test_rfc),
+                rfc_cipher=encrypt_text(test_rfc),
+                certificate=certificate_path,
+                curriculum=curriculum_path,
+                expertise_area="Matemáticas Avanzadas",
+                description="Docente de matemáticas con experiencia en álgebra y cálculo diferencial e integral"
+            )
+            db.add(doc)
+            await db.flush()
+            print("✅ Documento del docente creado con archivos reales cifrados")
+        else:
+            print("❌ No se pudo crear el documento: faltan archivos PDF")
         
         # Booking FIJO para el 4 de noviembre 2025
         fecha_booking = datetime(2025, 11, 4)  # 4 de noviembre 2025

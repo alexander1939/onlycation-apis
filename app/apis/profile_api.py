@@ -16,7 +16,8 @@ from app.schemas.user.preference_schema import (
 from app.services.user.preference_service import (
     create_preference_by_token,
     get_preference_by_token,
-    update_preference_by_token
+    update_preference_by_token,
+    get_user_id_from_token
 )
 
 from app.services.user.profile_service import (
@@ -205,3 +206,29 @@ async def get_my_preferences(
                 updated_at=preference.updated_at
             )
         )
+
+
+"""
+    Obtiene el nivel educativo del usuario autenticado
+    - Usa el token JWT para identificar al usuario
+    - Devuelve el nombre del nivel educativo
+"""
+@router.get("/preferences/educational_level/",
+           dependencies=[Depends(auth_required)])
+async def get_educational_level(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    token = credentials.credentials
+    preference = await get_preference_by_token(db, token)
+    
+    # Cargar la relación del nivel educativo
+    await db.refresh(preference, ["educational_level"])
+    
+    return {
+        "success": True,
+        "message": "Nivel educativo obtenido exitosamente",
+        "data": {
+            "educational_level": preference.educational_level.name if preference.educational_level else None
+        }
+    }
