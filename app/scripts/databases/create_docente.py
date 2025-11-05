@@ -531,7 +531,9 @@ async def crear_docente():
         # =====================
         
         # ELIMINAR DOCUMENTOS ANTIGUOS del docente
-        old_docs = await db.execute(select(Document).where(Document.user_id == docente.id))
+        old_docs = await db.execute(
+            select(Document).where(Document.user_id == docente.id)
+        )
         docs_to_delete = old_docs.scalars().all()
         for old_doc in docs_to_delete:
             # Eliminar archivos físicos si existen
@@ -563,6 +565,13 @@ async def crear_docente():
                 confirmations = confirmation_q.scalars().all()
                 for conf in confirmations:
                     await db.delete(conf)
+                # Eliminar assessments de este PaymentBooking
+                assessment_q = await db.execute(
+                    select(Assessment).where(Assessment.payment_booking_id == pb.id)
+                )
+                assessments = assessment_q.scalars().all()
+                for assess in assessments:
+                    await db.delete(assess)
                 # Luego eliminar el PaymentBooking
                 await db.delete(pb)
         
@@ -576,24 +585,185 @@ async def crear_docente():
         old_availabilities = await db.execute(
             select(Availability).where(Availability.user_id == docente.id)
         )
-        old_avails = old_availabilities.scalars().all()
-        for avail in old_avails:
-            await db.delete(avail)
+        availabilities_to_delete = old_availabilities.scalars().all()
+        for old_avail in availabilities_to_delete:
+            await db.delete(old_avail)
         await db.flush()
-        print(f"🗑️  Eliminadas {len(old_avails)} availabilities antiguas")
-        
-        # Crear availability NUEVA para MARTES (Nov 4 es martes)
-        disponibilidad_futura = Availability(
-            user_id=docente.id,
-            preference_id=preferencia.id,
-            day_of_week=2,  # MARTES (Nov 4, 2025 es martes)
-            start_time="09:00:00",
-            end_time="22:00:00",
-        )
-        db.add(disponibilidad_futura)
-        await db.flush()
-        print(f"✅ Availability creada: day_of_week={disponibilidad_futura.day_of_week} (MARTES)")
+        print(f"🗑️  Eliminadas {len(availabilities_to_delete)} availabilities antiguas")
 
+        # =====================
+        # Crear múltiples disponibilidades para Juan
+        # =====================
+        
+        # Crear disponibilidades para diferentes días de la semana
+        availability_days = [
+            {"day": 1, "name": "Lunes"},    # Monday
+            {"day": 2, "name": "Martes"},   # Tuesday  
+            {"day": 3, "name": "Miércoles"}, # Wednesday
+            {"day": 4, "name": "Jueves"},   # Thursday
+            {"day": 5, "name": "Viernes"}   # Friday
+        ]
+        
+        availabilities = []
+        for day_info in availability_days:
+            disponibilidad = Availability(
+                user_id=docente.id,
+                preference_id=preferencia.id,
+                day_of_week=day_info["day"],
+                start_time="09:00:00",
+                end_time="22:00:00"
+            )
+            db.add(disponibilidad)
+            await db.flush()
+            availabilities.append(disponibilidad)
+            print(f"✅ Availability creada: day_of_week={day_info['day']} ({day_info['name']})")
+
+        # =====================
+        # MÚLTIPLES BOOKINGS PARA JUAN PÉREZ (HISTORIAL DE RESERVAS)
+        # =====================
+        
+        # Obtener status_approved para los bookings
+        status_approved = (await db.execute(select(Status).where(Status.name == "approved"))).scalar_one_or_none()
+        
+        # Obtener price_id para Juan
+        price_juan_q = await db.execute(select(Price).where(Price.user_id == docente.id))
+        price_juan = price_juan_q.scalar_one()
+        
+        # Lista de bookings históricos para Juan Pérez (fechas que coinciden con disponibilidades)
+        bookings_data = [
+            {
+                "fecha": datetime(2025, 10, 14, 9, 0),  # Martes - Pasado
+                "day_of_week": 2,
+                "rating": 5,
+                "comment": "Excelente clase de matemáticas, muy claro en las explicaciones.",
+                "stripe_id": "pi_juan_001"
+            },
+            {
+                "fecha": datetime(2025, 10, 16, 9, 0),  # Jueves - Pasado
+                "day_of_week": 4,
+                "rating": 5,
+                "comment": "Profesor muy paciente, me ayudó mucho con álgebra.",
+                "stripe_id": "pi_juan_002"
+            },
+            {
+                "fecha": datetime(2025, 10, 21, 9, 0),  # Martes - Pasado
+                "day_of_week": 2,
+                "rating": 4,
+                "comment": "Buena clase, aunque un poco rápido en algunos temas.",
+                "stripe_id": "pi_juan_003"
+            },
+            {
+                "fecha": datetime(2025, 10, 25, 9, 0),   # Viernes - Pasado
+                "day_of_week": 5,
+                "rating": 5,
+                "comment": "Increíble profesor, definitivamente lo recomiendo.",
+                "stripe_id": "pi_juan_004"
+            },
+            {
+                "fecha": datetime(2025, 11, 5, 9, 0),  # Martes - Actual
+                "day_of_week": 2,
+                "rating": 5,
+                "comment": "Siempre aprendo algo nuevo en sus clases.",
+                "stripe_id": "pi_juan_005"
+            },
+            {
+                "fecha": datetime(2025, 11, 11, 9, 0),  # Martes - Futuro
+                "day_of_week": 2,
+                "rating": 4,
+                "comment": "Muy buen método de enseñanza, clases dinámicas.",
+                "stripe_id": "pi_juan_006"
+            },
+            {
+                "fecha": datetime(2025, 11, 25, 9, 0),  # Martes - Futuro
+                "day_of_week": 2,
+                "rating": 5,
+                "comment": "El mejor profesor de matemáticas que he tenido.",
+                "stripe_id": "pi_juan_007"
+            }
+        ]
+        
+        # Crear múltiples bookings para Juan
+        for i, booking_data in enumerate(bookings_data, 1):
+            clase_inicio = booking_data["fecha"]
+            clase_fin = clase_inicio + timedelta(hours=1)
+            
+            # Buscar la availability que corresponde al día de la semana
+            availability_for_day = None
+            for avail in availabilities:
+                if avail.day_of_week == booking_data["day_of_week"]:
+                    availability_for_day = avail
+                    break
+            
+            if not availability_for_day:
+                print(f"❌ No se encontró availability para day_of_week={booking_data['day_of_week']}")
+                continue
+            
+            # Validar que la hora del booking esté dentro del horario de disponibilidad
+            booking_time = clase_inicio.time()
+            start_time = datetime.strptime(availability_for_day.start_time, "%H:%M:%S").time()
+            end_time = datetime.strptime(availability_for_day.end_time, "%H:%M:%S").time()
+            
+            if not (start_time <= booking_time <= end_time):
+                print(f"❌ Booking #{i} fuera de horario: {booking_time} no está entre {start_time}-{end_time}")
+                continue
+            
+            # Crear booking
+            booking = Booking(
+                user_id=alumno.id,
+                availability_id=availability_for_day.id,
+                start_time=clase_inicio,
+                end_time=clase_fin,
+                status_id=status_approved.id if status_approved else None,
+                class_space="zoom"
+            )
+            db.add(booking)
+            await db.flush()
+            
+            # Crear PaymentBooking
+            pay = PaymentBooking(
+                user_id=alumno.id,
+                booking_id=booking.id,
+                price_id=price_juan.id,
+                total_amount=25000,  # $250 en centavos
+                commission_percentage=0,
+                commission_amount=0,
+                teacher_amount=25000,
+                platform_amount=0,
+                status_id=status_approved.id if status_approved else None,
+                stripe_payment_intent_id=booking_data["stripe_id"]
+            )
+            db.add(pay)
+            await db.flush()
+            
+            # Crear Confirmation
+            conf = Confirmation(
+                teacher_id=docente.id,
+                student_id=alumno.id,
+                payment_booking_id=pay.id,
+                confirmation_date_teacher=False,
+                confirmation_date_student=False,
+                description_teacher=f"Clase de matemáticas #{i}",
+                description_student=f"Lista para clase #{i}"
+            )
+            db.add(conf)
+            
+            # Crear Assessment (solo para clases pasadas y actuales)
+            if clase_inicio <= datetime.now():
+                assessment = Assessment(
+                    user_id=alumno.id,
+                    payment_booking_id=pay.id,
+                    qualification=booking_data["rating"],
+                    comment=booking_data["comment"]
+                )
+                db.add(assessment)
+            
+            day_names = {1: "Lunes", 2: "Martes", 3: "Miércoles", 4: "Jueves", 5: "Viernes"}
+            day_name = day_names.get(booking_data["day_of_week"], "Desconocido")
+            print(f"✅ Booking #{i} creado: {clase_inicio.strftime('%Y-%m-%d %H:%M')} ({day_name}) - Rating: {booking_data['rating']}/5 - Horario válido: {booking_time}")
+        
+        await db.flush()
+        print(f"🎉 Juan Pérez ahora tiene {len(bookings_data)} bookings con fechas y horarios que coinciden con sus disponibilidades")
+        
         # =====================
         # Documento del docente CON CIFRADO REAL
         # =====================
@@ -652,17 +822,17 @@ async def crear_docente():
         fecha_booking = datetime(2025, 11, 4)  # 4 de noviembre 2025
         
         print(f"📅 BOOKING FIJO: {fecha_booking.strftime('%Y-%m-%d %A')}")
-        print(f"📋 AVAILABILITY: day_of_week={disponibilidad_futura.day_of_week}")
+        print(f"📋 AVAILABILITY: day_of_week={2}")
 
         # Convertir string de hora a datetime para el booking
-        hora_inicio = datetime.strptime(disponibilidad_futura.start_time, "%H:%M:%S").time()
+        hora_inicio = datetime.strptime("09:00:00", "%H:%M:%S").time()
         clase_inicio = datetime.combine(fecha_booking.date(), hora_inicio)
         clase_fin = clase_inicio + timedelta(hours=1)
 
         # Crear booking nuevo
         booking = Booking(
             user_id=alumno.id,
-            availability_id=disponibilidad_futura.id,
+            availability_id=availabilities[1].id,
             start_time=clase_inicio,
             end_time=clase_fin,
             status_id=status_approved.id if status_approved else None,
