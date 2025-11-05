@@ -13,35 +13,58 @@ import json
 class PublicService:
     @staticmethod
     async def get_public_teachers(db: AsyncSession, min_bookings: Optional[int] = None):
-        # Construimos la consulta
+        # Subconsulta para calcular el promedio de calificaciones por docente
+        rating_subquery = (
+            select(
+                Availability.user_id,
+                func.coalesce(func.avg(Assessment.qualification), 0).label("avg_rating")
+            )
+            .select_from(Availability)
+            .outerjoin(Booking, Booking.availability_id == Availability.id)
+            .outerjoin(PaymentBooking, PaymentBooking.booking_id == Booking.id)
+            .outerjoin(Assessment, Assessment.payment_booking_id == PaymentBooking.id)
+            .group_by(Availability.user_id)
+            .subquery()
+        )
+        
+        # Query principal
         stmt = (
             select(
-                User.id.label('teacher_id'),
+                User.id.label('user_id'),
                 User.first_name,
                 User.last_name,
-                Document.description,
+                EducationalLevel.name.label("educational_level"),
                 Document.expertise_area,
-                Price.extra_hour_price.label('price_per_class'),
-                EducationalLevel.name.label('educational_level'),
+                Price.selected_prices.label("price_per_hour"),
+                rating_subquery.c.avg_rating.label("average_rating"),
+                Video.embed_url.label("video_embed_url"),
+                Video.thumbnail_url.label("video_thumbnail_url"),
                 func.count(Booking.id).label('total_bookings')
             )
-            .outerjoin(Document, User.id == Document.user_id)
-            .outerjoin(Price, User.id == Price.user_id)
-            .outerjoin(Preference, User.id == Preference.user_id)
-            .outerjoin(EducationalLevel, Preference.educational_level_id == EducationalLevel.id)
-            .outerjoin(Booking, User.id == Booking.user_id)
-            .where(User.role_id == 1)  # solo profesores
-            .where(User.status_id == 1)  # activos
+            .select_from(User)
+            .outerjoin(Profile, Profile.user_id == User.id)
+            .outerjoin(Preference, Preference.user_id == User.id)
+            .outerjoin(EducationalLevel, EducationalLevel.id == Preference.educational_level_id)
+            .outerjoin(Document, Document.user_id == User.id)
+            .outerjoin(Price, Price.user_id == User.id)
+            .outerjoin(Video, Video.user_id == User.id)
+            .outerjoin(rating_subquery, rating_subquery.c.user_id == User.id)
+            .outerjoin(Availability, Availability.user_id == User.id)
+            .outerjoin(Booking, Booking.availability_id == Availability.id)
+            .where(User.role_id == 1)  # Solo docentes
+            .where(User.status_id == 1)  # Solo activos
             .group_by(
                 User.id,
                 User.first_name,
                 User.last_name,
-                Document.description,
+                EducationalLevel.name,
                 Document.expertise_area,
                 Price.selected_prices,
-                EducationalLevel.name
+                rating_subquery.c.avg_rating,
+                Video.embed_url,
+                Video.thumbnail_url
             )
-            .order_by(desc(func.count(Booking.id)))
+            .order_by(desc(rating_subquery.c.avg_rating))
         )
         
         # Ejecutamos la consulta
@@ -55,23 +78,23 @@ class PublicService:
                 continue
             filtered_results.append(row)
         
-        return [
-    {
-        'teacher_id': row.teacher_id,
-        'first_name': row.first_name,
-        'last_name': row.last_name,
-        'description': row.description or "Sin descripción",
-        'subject': row.expertise_area or "Sin materia",
-        'price_per_class': (
-            float(json.loads(row.price_per_class)[0])
-            if row.price_per_class and isinstance(row.price_per_class, str)
-            else 0.0
-        ),
-        'educational_level': row.educational_level or "No definido",
-        'total_bookings': row.total_bookings
-    }
-    for row in filtered_results
-]
+        # Convertir a formato consistente con search_teachers_catalog
+        teachers_list = []
+        for row in filtered_results:
+            teachers_list.append({
+                "user_id": row.user_id,
+                "first_name": row.first_name,
+                "last_name": row.last_name,
+                "educational_level": row.educational_level,
+                "expertise_area": row.expertise_area,
+                "price_per_hour": float(row.price_per_hour) if row.price_per_hour else None,
+                "average_rating": round(float(row.average_rating or 0), 2),
+                "video_embed_url": row.video_embed_url,
+                "video_thumbnail_url": row.video_thumbnail_url,
+                "total_bookings": row.total_bookings
+            })
+        
+        return teachers_list
 
     @staticmethod
     async def search_teachers_catalog(

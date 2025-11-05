@@ -128,7 +128,7 @@ async def lifespan(app: FastAPI):
     await create_premium_plan()
     await create_free_plan()
     await create_benefit()
-    await crear_docente()  # Comentado: solo para testing, borra datos en cada inicio
+  #  await crear_docente()  # Comentado: solo para testing, borra datos en cada inicio
     await create_categories()
 
     yield
