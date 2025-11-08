@@ -12,8 +12,6 @@ from app.models.booking.bookings import Booking
 from app.models.common.status import Status
 from app.models.users.user import User
 
-logger = logging.getLogger(__name__)
-
 async def get_teacher_weekly_agenda(
     db: AsyncSession,
     user_data: dict,
@@ -25,7 +23,6 @@ async def get_teacher_weekly_agenda(
     try:
         # Verificar que el usuario sea docente
         user_role = user_data.get("role")
-        logger.info(f"🔍 Usuario con rol '{user_role}' accediendo a agenda")
         if user_role != "teacher":
             raise HTTPException(status_code=403, detail="Solo los docentes pueden acceder a esta funcionalidad")
         
@@ -53,7 +50,6 @@ async def get_teacher_weekly_agenda(
         
         # Debug: imprimir el rol del usuario
         role_name = teacher.role.name if teacher.role else "Sin rol"
-        logger.info(f"🔍 Usuario {teacher_id} tiene rol: {role_name}")
         
         if not teacher.role or teacher.role.name != "teacher":
             raise HTTPException(status_code=403, detail=f"El usuario especificado no es un docente. Rol actual: {role_name}")
@@ -85,20 +81,6 @@ async def get_teacher_weekly_agenda(
         booking_result = await db.execute(booking_query)
         bookings = booking_result.scalars().all()
         
-        logger.info(f"=" * 60)
-        logger.info(f"🔍 AGENDA DEL DOCENTE {teacher_id}")
-        logger.info(f"📅 Rango de semana: {week_start_date.strftime('%Y-%m-%d')} a {week_end_date.strftime('%Y-%m-%d')}")
-        logger.info(f"📋 Total availabilities encontradas: {len(availabilities)}")
-        logger.info(f"🎫 Total bookings encontrados: {len(bookings)}")
-        
-        if bookings:
-            logger.info(f"📝 DETALLES DE BOOKINGS:")
-            for b in bookings:
-                logger.info(f"   - Booking {b.id}: {b.start_time} - {b.end_time} | Status: {b.status.name if b.status else 'None'} | Availability ID: {b.availability_id}")
-        else:
-            logger.info(f"⚠️  NO SE ENCONTRARON BOOKINGS EN ESTE RANGO DE FECHAS")
-        
-        logger.info(f"=" * 60)
         
         # 3. Construir la agenda semanal (lunes a domingo)
         days = []
@@ -140,9 +122,10 @@ async def get_teacher_weekly_agenda(
         }
         
     except HTTPException:
+        await db.rollback()
         raise
     except Exception as e:
-        logger.error(f"Error obteniendo agenda del docente: {e}")
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 def generate_time_slots(availability: Availability, bookings: List[Booking]) -> List[Dict]:
@@ -267,7 +250,7 @@ async def get_teacher_availability_summary(
         }
         
     except Exception as e:
-        logger.error(f"❌ Error obteniendo resumen de disponibilidad: {str(e)}")
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 async def get_public_teacher_weekly_agenda(
@@ -318,9 +301,7 @@ async def get_public_teacher_weekly_agenda(
         if not teacher:
             raise HTTPException(status_code=404, detail="Docente no encontrado")
         
-        # Debug: imprimir el rol del usuario
         role_name = teacher.role.name if teacher.role else "Sin rol"
-        logger.info(f"🔍 Usuario {teacher_id} tiene rol: {role_name}")
         
         if not teacher.role or teacher.role.name != "teacher":
             raise HTTPException(status_code=403, detail=f"El usuario especificado no es un docente. Rol actual: {role_name}")
@@ -350,20 +331,6 @@ async def get_public_teacher_weekly_agenda(
         booking_result = await db.execute(booking_query)
         bookings = booking_result.scalars().all()
         
-        logger.info(f"=" * 60)
-        logger.info(f"🔍 AGENDA PÚBLICA DEL DOCENTE {teacher_id}")
-        logger.info(f"📅 Rango de semana: {week_start.strftime('%Y-%m-%d')} a {week_end_date.strftime('%Y-%m-%d')}")
-        logger.info(f"📋 Total availabilities encontradas: {len(all_availabilities)}")
-        logger.info(f"🎫 Total bookings encontrados: {len(bookings)}")
-        
-        if bookings:
-            logger.info(f"📝 DETALLES DE BOOKINGS:")
-            for b in bookings:
-                logger.info(f"   - Booking {b.id}: {b.start_time} - {b.end_time} | Status: {b.status.name if b.status else 'None'} | Availability ID: {b.availability_id}")
-        else:
-            logger.info(f"⚠️  NO SE ENCONTRARON BOOKINGS EN ESTE RANGO DE FECHAS")
-        
-        logger.info(f"=" * 60)
         
         # 3. Construir la agenda (días del rango especificado)
         days = []
@@ -375,24 +342,19 @@ async def get_public_teacher_weekly_agenda(
             # Pero nuestro sistema usa 1=Monday, 2=Tuesday...
             python_weekday = current_date.weekday()  # 0=Monday, 1=Tuesday, ..., 6=Sunday
             our_day_of_week = python_weekday + 1 if python_weekday < 6 else 7  # 1=Monday, 2=Tuesday, ..., 7=Sunday
-            
-            logger.info(f"📅 Procesando fecha: {current_date.strftime('%Y-%m-%d')} (%A) | Python weekday: {python_weekday} | Nuestro day_of_week: {our_day_of_week}")
-            
+                        
             # Filtrar disponibilidades para este día de la semana
             day_availabilities = [
                 av for av in all_availabilities 
                 if av.day_of_week == our_day_of_week
             ]
-            
-            logger.info(f"📋 Disponibilidades encontradas para día {our_day_of_week}: {len(day_availabilities)}")
-            
+                        
             # Filtrar bookings para esta fecha específica
             day_bookings = [
                 booking for booking in bookings 
                 if booking.start_time.date() == current_date.date()
             ]
             
-            logger.info(f"📅 Bookings encontrados para fecha {current_date.strftime('%Y-%m-%d')}: {len(day_bookings)}")
             
             # Generar slots de tiempo para este día
             day_slots = []
@@ -410,7 +372,6 @@ async def get_public_teacher_weekly_agenda(
                 booking_status = None
                 
                 for booking in day_bookings:
-                    logger.info(f"🔍 Comparando booking {booking.id}: {booking.start_time} - {booking.end_time} (status: {booking.status.name if booking.status else 'None'}) con slot {slot_start} - {slot_end}")
                     
                     # Verificar si hay overlap entre el slot y la reserva
                     if (booking.start_time < slot_end and 
@@ -418,13 +379,11 @@ async def get_public_teacher_weekly_agenda(
                         booking.availability_id == availability.id):
                         is_occupied = True
                         booking_status = booking.status.name if booking.status else "occupied"
-                        logger.info(f"✅ OVERLAP DETECTADO! Booking {booking.id} ocupa este slot. Status: {booking_status}")
                         break
                 
                 # Determinar el estado del slot
                 if is_occupied:
                     status = "occupied" if booking_status in ["confirmed", "active", "approved", "paid"] else "pending"
-                    logger.info(f"🔴 Slot {availability.start_time[:5]}-{availability.end_time[:5]} marcado como: {status}")
                 else:
                     status = "available"
                 
@@ -464,9 +423,10 @@ async def get_public_teacher_weekly_agenda(
         }
         
     except HTTPException:
+        await db.rollback()
         raise
     except Exception as e:
-        logger.error(f"Error obteniendo agenda pública del docente: {e}")
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 async def create_teacher_availability(
@@ -479,13 +439,13 @@ async def create_teacher_availability(
     Acepta: day_of_week (Monday, Tuesday, etc. o número) y horas (09:00 o 2025-11-04T09:00:00)
     """
     try:
-        
         teacher_id = user_data["user_id"]
         
         # Validar datos requeridos
         required_fields = ["preference_id", "day_of_week", "start_time", "end_time"]
         for field in required_fields:
             if field not in availability_data:
+                await db.rollback()
                 raise HTTPException(status_code=400, detail=f"Campo requerido: {field}")
         
         # Convertir strings a datetime (soporta ambos formatos)
@@ -497,6 +457,10 @@ async def create_teacher_availability(
         try:
             start_time_str = availability_data["start_time"]
             end_time_str = availability_data["end_time"]
+            
+            # Convertir "24:00" a "00:00" (medianoche)
+            if end_time_str == "24:00":
+                end_time_str = "00:00"
             
             # Detectar si es formato ISO completo o solo hora
             if "T" in start_time_str or len(start_time_str) > 8:
@@ -521,52 +485,38 @@ async def create_teacher_availability(
                 hour = int(parts[0])
                 minute = int(parts[1]) if len(parts) > 1 else 0
                 end_time = datetime.combine(reference_date, dt_time(hour=hour, minute=minute))
+                
+                # CASO ESPECIAL: Si end_time <= start_time, significa que cruza medianoche
+                # Ejemplo: 23:00 - 00:00 (debe ser válido)
+                if end_time <= start_time:
+                    end_time = end_time + timedelta(days=1)
             else:
                 raise ValueError("Formato inválido")
                 
         except (ValueError, IndexError) as e:
+            await db.rollback()
             raise HTTPException(
                 status_code=400, 
-                detail="Formato de hora inválido. Use HH:MM (ej: 09:00) o ISO (ej: 2025-11-04T09:00:00)"
+                detail=f"Formato de hora inválido. Use HH:MM (ej: 09:00) o ISO. Error: {str(e)}"
             )
         
         # Validar que start_time sea antes que end_time
         if start_time >= end_time:
+            await db.rollback()
             raise HTTPException(status_code=400, detail="La hora de inicio debe ser anterior a la hora de fin")
         
         # Validar que las horas sean exactas (sin minutos)
         if start_time.minute != 0 or start_time.second != 0 or start_time.microsecond != 0:
+            await db.rollback()
             raise HTTPException(status_code=400, detail="La hora de inicio debe ser una hora exacta (ej: 09:00, 10:00)")
         
         if end_time.minute != 0 or end_time.second != 0 or end_time.microsecond != 0:
+            await db.rollback()
             raise HTTPException(status_code=400, detail="La hora de fin debe ser una hora exacta (ej: 10:00, 13:00)")
         
         # Convertir datetime a string para guardar (modelo usa String)
         start_time_str_db = start_time.strftime("%H:%M:%S")
         end_time_str_db = end_time.strftime("%H:%M:%S")
-        
-        # Verificar que no haya conflictos con disponibilidades existentes
-        existing_query = select(Availability).where(
-            Availability.user_id == teacher_id,
-            Availability.day_of_week == availability_data["day_of_week"]
-        )
-        existing_result = await db.execute(existing_query)
-        existing_availabilities = existing_result.scalars().all()
-        
-        # Comparar manualmente los horarios (strings)
-        for existing in existing_availabilities:
-            # Convertir strings de BD a datetime para comparar
-            existing_start = datetime.strptime(existing.start_time, "%H:%M:%S").time()
-            existing_end = datetime.strptime(existing.end_time, "%H:%M:%S").time()
-            new_start = start_time.time()
-            new_end = end_time.time()
-            
-            # Verificar overlap
-            if existing_start < new_end and existing_end > new_start:
-                raise HTTPException(
-                    status_code=409, 
-                    detail="Ya existe una disponibilidad que se superpone con este horario"
-                )
         
         # Crear nueva disponibilidad con strings
         new_availability = Availability(
@@ -592,10 +542,10 @@ async def create_teacher_availability(
         }
         
     except HTTPException:
+        await db.rollback()
         raise
     except Exception as e:
         await db.rollback()
-        logger.error(f"Error creando disponibilidad: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 async def update_teacher_availability(
@@ -643,30 +593,16 @@ async def update_teacher_availability(
             
             # Validaciones de tiempo
             if start_time >= end_time:
+                await db.rollback()
                 raise HTTPException(status_code=400, detail="La hora de inicio debe ser anterior a la hora de fin")
             
             if start_time.minute != 0 or start_time.second != 0 or start_time.microsecond != 0:
+                await db.rollback()
                 raise HTTPException(status_code=400, detail="La hora de inicio debe ser una hora exacta")
             
             if end_time.minute != 0 or end_time.second != 0 or end_time.microsecond != 0:
+                await db.rollback()
                 raise HTTPException(status_code=400, detail="La hora de fin debe ser una hora exacta")
-            
-            # Verificar conflictos con otras disponibilidades (excluyendo la actual)
-            conflict_query = select(Availability).where(
-                Availability.user_id == teacher_id,
-                Availability.id != availability_id,  # Excluir la disponibilidad actual
-                Availability.day_of_week == availability_data.get("day_of_week", availability.day_of_week),
-                Availability.start_time < end_time,
-                Availability.end_time > start_time
-            )
-            conflict_result = await db.execute(conflict_query)
-            conflicting_availability = conflict_result.scalar_one_or_none()
-            
-            if conflicting_availability:
-                raise HTTPException(
-                    status_code=409, 
-                    detail="Ya existe otra disponibilidad que se superpone con este horario"
-                )
             
             availability.start_time = start_time
             availability.end_time = end_time
@@ -691,10 +627,10 @@ async def update_teacher_availability(
         }
         
     except HTTPException:
+        await db.rollback()
         raise
     except Exception as e:
         await db.rollback()
-        logger.error(f"Error actualizando disponibilidad: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 async def delete_teacher_availability(
@@ -737,10 +673,11 @@ async def delete_teacher_availability(
         await db.commit()
         
     except HTTPException:
+        await db.rollback()
         raise
     except Exception as e:
         await db.rollback()
-        logger.error(f"Error eliminando disponibilidad: {e}")
+        print(f"Error eliminando disponibilidad: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 async def get_teacher_availability_list(
@@ -821,7 +758,8 @@ async def get_teacher_availability_list(
         }
         
     except HTTPException:
+        await db.rollback()
         raise
     except Exception as e:
-        logger.error(f"Error obteniendo lista de disponibilidades: {e}")
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Error interno del servidor")
