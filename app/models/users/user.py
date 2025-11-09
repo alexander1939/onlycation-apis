@@ -11,7 +11,7 @@ class User(Base):
     last_name = Column(String(100), nullable=False)
     email = Column(String(120), unique=True, nullable=False, index=True)
     password = Column(String(255), nullable=False)
-    privacy_policy_accepted = Column(Boolean, nullable=False, default=True, server_default="true")
+    privacy_policy_accepted = Column(Boolean, nullable=False, default=True, server_default="1")
     role_id = Column(Integer, ForeignKey("roles.id"))
     status_id = Column(Integer, ForeignKey("statuses.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
