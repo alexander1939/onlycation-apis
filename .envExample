@@ -1,6 +1,37 @@
-SQLALCHEMY_DATABASE_URI=sqlite:///task.db
+# ===========================================
+# CONFIGURACIÓN DE BASE DE DATOS
+# ===========================================
+
+# Para DESARROLLO (rama dev) - SQLite:
+SQLALCHEMY_DATABASE_URI=sqlite+aiosqlite:///task.db
+
+# Para PRODUCCIÓN (rama main) - MySQL:
+# Descomentar y configurar los siguientes valores:
+# SQLALCHEMY_DATABASE_URI=mysql+aiomysql://USER:PASSWORD@HOST:PORT/DATABASE
+
+# Ejemplo completo para MySQL:
+# SQLALCHEMY_DATABASE_URI=mysql+aiomysql://onlycation_user:MiPassword123@localhost:3306/onlycation_db
+
+# Configuración MySQL separada (para referencia):
+MYSQL_USER=onlycation_user
+MYSQL_PASSWORD=MiPassword123
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_DATABASE=onlycation_db
+
+# La URL completa sería:
+# mysql+aiomysql://onlycation_user:MiPassword123@localhost:3306/onlycation_db
+
 SQLALCHEMY_TRACK_MODIFICATIONS=False
+
+# ===========================================
+# SEGURIDAD
+# ===========================================
 SECRET_KEY=UUr09BTA_9ZGHjl6Mz75FuUn-ftJli7yN2XMyt1myeA
+
+# ===========================================
+# CONFIGURACIÓN DE CORREO
+# ===========================================
 MAIL_USERNAME=recuperaciondecontrasena7@gmail.com
 MAIL_PASSWORD=oecy hsou xktp kkzh
 MAIL_FROM=recuperaciondecontrasena7@gmail.com
@@ -9,17 +40,28 @@ MAIL_SERVER=smtp.gmail.com
 MAIL_STARTTLS=True
 MAIL_SSL_TLS=False
 
+# ===========================================
+# USUARIO ADMINISTRADOR
+# ===========================================
 ADMIN_EMAIL=admin@onlycation.com
 ADMIN_PASSWORD=SuperSecreta123
 ADMIN_FIRST_NAME=Admin
 ADMIN_LAST_NAME=Onlycation
 ADMIN_ROLE=admin
 
+# ===========================================
+# STRIPE (PAGOS)
+# ===========================================
 STRIPE_SECRET_KEY=sk_test_51RSMkQ2NROmv3Uo5TKhv6TwlaUk7NQQHcLTwHBjHm6M46hF1WrWJbbr4Ur0bdtLMSoiqXr25mQQaT8bZeNB0g4tH00ih9oZuFR
 STRIPE_PUBLIC_KEY=pk_test_51RSMkQ2NROmv3Uo5zxN9uWBmb1F1viLmsiMkzhNLNkgCCYUmZv6mbFutNb535hk4DcZ6O8EN9SAHdwpsYBreduGC00SAESslzK
 
+# ===========================================
+# ENCRIPTACIÓN
+# ===========================================
 DOC_CIPHER_KEY=PEGA_AQUI_LA_CLAVE
-
 EVIDENCE_ENCRYPTION_KEY=PEGA_LA_CLAVE
 
+# ===========================================
+# APIS EXTERNAS
+# ===========================================
 YOUTUBE_API_KEY=AIzaSyA0-YqoVS_ndF8Mq9SbwkIPSxsLUk8LVsM
