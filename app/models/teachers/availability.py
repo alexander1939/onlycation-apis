@@ -10,8 +10,8 @@ class Availability(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     preference_id = Column(Integer, ForeignKey("preferences.id"), nullable=False)
     day_of_week = Column(Integer, nullable=False)
-    start_time = Column(String, nullable=False)  # Solo hora como texto: "09:00:00"
-    end_time = Column(String, nullable=False)    # Solo hora como texto: "10:00:00"
+    start_time = Column(String(10), nullable=False)  # Solo hora como texto: "09:00:00"
+    end_time = Column(String(10), nullable=False)    # Solo hora como texto: "10:00:00"
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
