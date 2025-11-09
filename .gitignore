@@ -11,6 +11,9 @@ alembic.ini
 .env
 
 # Configuración de base de datos (diferente por rama)
+./app/cores/db.py
+../app/cores/db.py
+
 app/cores/db.py
 
 # Archivos y carpetas creados por Python
