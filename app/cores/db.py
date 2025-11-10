@@ -1,21 +1,12 @@
 """
-Configuración de SQLAlchemy para trabajar con base de datos de forma asincrónica.
-Soporta SQLite (desarrollo) y MySQL (producción) según variable de entorno.
+Configuración de SQLAlchemy para trabajar con una base de datos MySQL de forma asincrónica.
 """
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from app.configs.settings import settings
-
-DATABASE_URL = settings.SQLALCHEMY_DATABASE_URI
-
-connect_args = {}
-if DATABASE_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
 
 engine = create_async_engine(
-    DATABASE_URL,
-    connect_args=connect_args,
+    "mysql+aiomysql://onlycation:OnlyCation2025@database-onlycationdb-1rcvau:3306/onlycation_db",
     echo=False
 )
 
