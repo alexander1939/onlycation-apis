@@ -55,7 +55,6 @@ jobs:
           curl -sSf http://localhost:8000/openapi.json > /dev/null || (echo "OpenAPI not reachable" && exit 1)
 
       - name: Discover endpoints and run ZAP full-scan per path
-        continue-on-error: true
         run: |
           mkdir -p reports
           # install jq to parse openapi.json
@@ -76,7 +75,6 @@ jobs:
           done
 
       - name: Run OWASP ZAP API Scan (OpenAPI)
-        continue-on-error: true
         uses: zaproxy/action-api-scan@v0.7.0
         with:
           # FastAPI serves the OpenAPI definition at /openapi.json by default
@@ -85,7 +83,6 @@ jobs:
           allow_issue_writing: true
 
       - name: Run OWASP ZAP Baseline Scan (optional)
-        continue-on-error: true
         uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://localhost:8000'
@@ -95,7 +92,6 @@ jobs:
           allow_issue_writing: true
 
       - name: Run OWASP ZAP Full Scan (spider + active)
-        continue-on-error: true
         # Use the official ZAP Docker image to run the full scan (spider + active scanning)
         run: |
           mkdir -p reports
