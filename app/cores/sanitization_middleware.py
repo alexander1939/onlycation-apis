@@ -5,10 +5,11 @@ todos los inputs de usuario en TODAS las APIs.
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.datastructures import FormData
+from starlette.datastructures import FormData, QueryParams
 from app.cores.html_sanitizer import HTMLSanitizer
 import json
 from typing import Any, Dict, Union
+from urllib.parse import urlencode
 
 
 class SanitizationMiddleware(BaseHTTPMiddleware):
@@ -16,7 +17,7 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
     Middleware que sanitiza automáticamente todos los datos de entrada:
     - Request bodies (JSON)
     - Form data
-    - Query parameters
+    - Query parameters (búsquedas, filtros)
     
     Elimina código HTML/JavaScript peligroso de todos los strings.
     """
@@ -39,12 +40,46 @@ class SanitizationMiddleware(BaseHTTPMiddleware):
         if request.url.path in self.SKIP_PATHS:
             return await call_next(request)
         
-        # Solo sanitizar POST, PUT, PATCH (métodos que envían datos)
+        # Sanitizar query parameters en TODOS los métodos (GET, POST, etc.)
+        if request.query_params:
+            self._sanitize_query_params(request)
+        
+        # Sanitizar body solo en POST, PUT, PATCH (métodos que envían datos)
         if request.method in ['POST', 'PUT', 'PATCH']:
             await self._sanitize_request(request)
         
         response = await call_next(request)
         return response
+    
+    def _sanitize_query_params(self, request: Request):
+        """
+        Sanitiza query parameters (?query=..., ?filter=..., etc.).
+        Protege endpoints de búsqueda y filtros.
+        """
+        try:
+            # Obtener query params originales
+            original_params = dict(request.query_params)
+            
+            if not original_params:
+                return
+            
+            # Sanitizar cada parámetro
+            sanitized_params = {}
+            for key, value in original_params.items():
+                if key.lower() not in self.SKIP_FIELDS:
+                    if isinstance(value, str):
+                        sanitized_params[key] = self._sanitize_string(value)
+                    else:
+                        sanitized_params[key] = value
+                else:
+                    sanitized_params[key] = value
+            
+            # Reemplazar query params con versión sanitizada
+            request._query_params = QueryParams(sanitized_params)
+            
+        except Exception as e:
+            print(f"Error sanitizing query params: {e}")
+            pass
     
     async def _sanitize_request(self, request: Request):
         """Sanitiza el contenido del request."""
