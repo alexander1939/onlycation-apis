@@ -12,6 +12,7 @@ from app.cores.rate_limiter import limiter, rate_limit_exceeded_handler
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.cores.security_headers import SecurityHeadersMiddleware
+from app.cores.sanitization_middleware import SanitizationMiddleware
 
 from app.models.common.status import Status
 from app.models.common.role import Role
@@ -158,6 +159,9 @@ def create_app() -> FastAPI:
     # Aplicar rate limiting global a todas las rutas
     from slowapi.middleware import SlowAPIMiddleware
     app.add_middleware(SlowAPIMiddleware)
+
+    # Agregar middleware de sanitización
+    app.add_middleware(SanitizationMiddleware)
 
     origins = [
         "http://localhost:5173/",
