@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, Float, DateTime, String
+from sqlalchemy import Column, Integer, ForeignKey, Float, DateTime, String, Boolean, Time
 from sqlalchemy.orm import relationship
 from app.cores.db import Base
 from sqlalchemy.sql import func
@@ -12,6 +12,7 @@ class Availability(Base):
     day_of_week = Column(Integer, nullable=False)
     start_time = Column(String(10), nullable=False)  # Solo hora como texto: "09:00:00"
     end_time = Column(String(10), nullable=False)    # Solo hora como texto: "10:00:00"
+    is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

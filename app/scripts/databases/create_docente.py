@@ -23,65 +23,69 @@ import stripe
 from app.cores.security import get_password_hash, rfc_hash_plain, encrypt_text, encrypt_bytes
 from app.models.common.status import Status
 import os
+from app.scripts.databases.create_alumno import crear_alumno
 
+# =====================
+# Helpers (Docente de prueba)
+# =====================
+async def _ensure_docente_user(db: AsyncSession) -> User:
+    result = await db.execute(select(User).where(User.email == "docente_prueba@example.com"))
+    docente = result.scalar_one_or_none()
+    if not docente:
+        docente = User(
+            first_name="Juan",
+            last_name="Pérez",
+            email="docente_prueba@example.com",
+            password=get_password_hash("12345678"),  # Contraseña de prueba hasheada
+            role_id=1,  # Docente
+            status_id=1  # Activo
+        )
+        db.add(docente)
+        await db.flush()
+        print("Usuario creado.")
+    else:
+        print("El docente ya existe.")
+    return docente
+
+async def _ensure_docente_profile(db: AsyncSession, docente: User) -> None:
+    perfil_result = await db.execute(select(Profile).where(Profile.user_id == docente.id))
+    perfil = perfil_result.scalar_one_or_none()
+    if not perfil:
+        perfil = Profile(
+            user_id=docente.id,
+            credential="Licenciado en Matemáticas",
+            gender="Masculino",
+            sex="M"
+        )
+        db.add(perfil)
+        print("Perfil creado.")
+    else:
+        print("El perfil ya existe.")
+
+async def _ensure_docente_preference(db: AsyncSession, docente: User) -> Preference:
+    preferencia_result = await db.execute(select(Preference).where(Preference.user_id == docente.id))
+    preferencia = preferencia_result.scalar_one_or_none()
+    if not preferencia:
+        preferencia = Preference(
+            user_id=docente.id,
+            educational_level_id=1,
+            modality_id=1,
+            location="CDMX",
+            location_description="Zona centro"
+        )
+        db.add(preferencia)
+        await db.flush()
+        print("Preferencia creada.")
+    else:
+        print("La preferencia ya existe.")
+    return preferencia
 
 async def crear_docente():
     async with async_session() as db:
-        # Validar si ya existe el usuario por email
-        result = await db.execute(
-            select(User).where(User.email == "docente_prueba@example.com")
-        )
-        docente = result.scalar_one_or_none()
-        if not docente:
-            docente = User(
-                first_name="Juan",
-                last_name="Pérez",
-                email="docente_prueba@example.com",
-                password=get_password_hash("12345678"),  # Contraseña de prueba hasheada
-                role_id=1,  # Asume que 1 es el rol de docente
-                status_id=1  # Activo
-            )
-            db.add(docente)
-            await db.flush()  # Para obtener el id
-            print("Usuario creado.")
-        else:
-            print("El docente ya existe.")
-
-        # Validar perfil
-        perfil_result = await db.execute(
-            select(Profile).where(Profile.user_id == docente.id)
-        )
-        perfil = perfil_result.scalar_one_or_none()
-        if not perfil:
-            perfil = Profile(
-                user_id=docente.id,
-                credential="Licenciado en Matemáticas",
-                gender="Masculino",
-                sex="M"
-            )
-            db.add(perfil)
-            print("Perfil creado.")
-        else:
-            print("El perfil ya existe.")
-
-        # Validar preferencia
-        preferencia_result = await db.execute(
-            select(Preference).where(Preference.user_id == docente.id)
-        )
-        preferencia = preferencia_result.scalar_one_or_none()
-        if not preferencia:
-            preferencia = Preference(
-                user_id=docente.id,
-                educational_level_id=1,  # Asume que existe
-                modality_id=1,           # Asume que existe
-                location="CDMX",
-                location_description="Zona centro"
-            )
-            db.add(preferencia)
-            await db.flush()
-            print("Preferencia creada.")
-        else:
-            print("La preferencia ya existe.")
+        # Docente base (usuario, perfil, preferencia)
+        docente = await _ensure_docente_user(db)
+        await _ensure_docente_profile(db, docente)
+        preferencia = await _ensure_docente_preference(db, docente)
 
         # Precio principal
         selected_price = 250.0
@@ -300,231 +304,12 @@ async def crear_docente():
             print("El video del docente ya existe.")
 
         # =====================
-        # Crear alumno de prueba
+        # Alumno de prueba (módulo separado)
         # =====================
-        student_res = await db.execute(select(User).where(User.email == "alumno_prueba@example.com"))
-        alumno = student_res.scalar_one_or_none()
-        if not alumno:
-            alumno = User(
-                first_name="Luis",
-                last_name="García",
-                email="alumno_prueba@example.com",
-                password=get_password_hash("12345678"),
-                role_id=2,  # asumiendo 2 = alumno
-                status_id=1,
-            )
-            db.add(alumno)
-            await db.flush()
-            # perfil simple opcional
-            perfil_alumno = Profile(
-                user_id=alumno.id,
-                credential="Estudiante",
-                gender="Masculino",
-                sex="M",
-            )
-            db.add(perfil_alumno)
-            print("Alumno de prueba creado.")
-        else:
-            print("El alumno de prueba ya existe.")
+        alumno = await crear_alumno(db)
 
         # Obtener status_approved para los bookings
         status_approved = (await db.execute(select(Status).where(Status.name == "approved"))).scalar_one_or_none()
-
-        # =============================================
-        # CREAR 4 DOCENTES ADICIONALES CON VIDEOS REALES
-        # =============================================
-        
-        # DOCENTE 2: María López - Física
-        result2 = await db.execute(select(User).where(User.email == "maria.lopez@example.com"))
-        docente2 = result2.scalar_one_or_none()
-        if not docente2:
-            docente2 = User(
-                first_name="María",
-                last_name="López",
-                email="maria.lopez@example.com",
-                password=get_password_hash("12345678"),
-                role_id=1,
-                status_id=1
-            )
-            db.add(docente2)
-            await db.flush()
-            
-            db.add(Profile(user_id=docente2.id, credential="Maestra en Física", gender="Femenino", sex="F"))
-            db.add(Preference(user_id=docente2.id, educational_level_id=2, modality_id=1, location="Guadalajara"))
-            await db.flush()
-            
-            pref2_q = await db.execute(select(Preference).where(Preference.user_id == docente2.id))
-            pref2 = pref2_q.scalar_one()
-            
-            db.add(Price(user_id=docente2.id, preference_id=pref2.id, price_range_id=2, selected_prices=300.0, extra_hour_price=150.0))
-            db.add(Document(user_id=docente2.id, rfc_hash="hash2", rfc_cipher="cipher2", certificate="/evidence/cert2.enc", curriculum="/evidence/cv2.enc", expertise_area="Física Cuántica", description="Docente de física con especialización en mecánica cuántica"))
-            db.add(Video(user_id=docente2.id, youtube_video_id="Unzc731iCUY", title="Presentación María López - Física", thumbnail_url=None, duration_seconds=60, embed_url="https://www.youtube.com/embed/Unzc731iCUY", privacy_status="public", embeddable=True, original_url="https://www.youtube.com/watch?v=Unzc731iCUY"))
-            
-            # Crear booking y assessment para María
-            avail2 = Availability(user_id=docente2.id, preference_id=pref2.id, day_of_week=3, start_time="10:00:00", end_time="11:00:00")
-            db.add(avail2)
-            await db.flush()
-            
-            booking2 = Booking(user_id=alumno.id, availability_id=avail2.id, start_time=datetime(2025, 11, 5, 10, 0), end_time=datetime(2025, 11, 5, 11, 0), status_id=status_approved.id if status_approved else None, class_space="zoom")
-            db.add(booking2)
-            await db.flush()
-            
-            # Obtener price_id para María
-            price2_q = await db.execute(select(Price).where(Price.user_id == docente2.id))
-            price2 = price2_q.scalar_one()
-            
-            pay2 = PaymentBooking(user_id=alumno.id, booking_id=booking2.id, price_id=price2.id, total_amount=30000, commission_percentage=0, commission_amount=0, teacher_amount=30000, platform_amount=0, status_id=status_approved.id if status_approved else None, stripe_payment_intent_id="pi_test2")
-            db.add(pay2)
-            await db.flush()
-            
-            assess2 = Assessment(user_id=alumno.id, payment_booking_id=pay2.id, qualification=4, comment="Muy buena clase de física, explicaciones claras.")
-            db.add(assess2)
-            
-            print("✅ Docente 2 (María López - Física) creado con assessment")
-        
-        # DOCENTE 3: Carlos Ramírez - Química
-        result3 = await db.execute(select(User).where(User.email == "carlos.ramirez@example.com"))
-        docente3 = result3.scalar_one_or_none()
-        if not docente3:
-            docente3 = User(
-                first_name="Carlos",
-                last_name="Ramírez",
-                email="carlos.ramirez@example.com",
-                password=get_password_hash("12345678"),
-                role_id=1,
-                status_id=1
-            )
-            db.add(docente3)
-            await db.flush()
-            
-            db.add(Profile(user_id=docente3.id, credential="Doctor en Química", gender="Masculino", sex="M"))
-            db.add(Preference(user_id=docente3.id, educational_level_id=3, modality_id=1, location="Monterrey"))
-            await db.flush()
-            
-            pref3_q = await db.execute(select(Preference).where(Preference.user_id == docente3.id))
-            pref3 = pref3_q.scalar_one()
-            
-            db.add(Price(user_id=docente3.id, preference_id=pref3.id, price_range_id=3, selected_prices=350.0, extra_hour_price=175.0))
-            db.add(Document(user_id=docente3.id, rfc_hash="hash3", rfc_cipher="cipher3", certificate="/evidence/cert3.enc", curriculum="/evidence/cv3.enc", expertise_area="Química Orgánica", description="Profesor de química especializado en síntesis orgánica"))
-            db.add(Video(user_id=docente3.id, youtube_video_id="mOJ0XspgRxE", title="Presentación Carlos Ramírez - Química", thumbnail_url=None, duration_seconds=55, embed_url="https://www.youtube.com/embed/mOJ0XspgRxE", privacy_status="public", embeddable=True, original_url="https://www.youtube.com/watch?v=mOJ0XspgRxE"))
-            
-            # Crear booking y assessment para Carlos
-            avail3 = Availability(user_id=docente3.id, preference_id=pref3.id, day_of_week=4, start_time="14:00:00", end_time="15:00:00")
-            db.add(avail3)
-            await db.flush()
-            
-            booking3 = Booking(user_id=alumno.id, availability_id=avail3.id, start_time=datetime(2025, 11, 6, 14, 0), end_time=datetime(2025, 11, 6, 15, 0), status_id=status_approved.id if status_approved else None, class_space="zoom")
-            db.add(booking3)
-            await db.flush()
-            
-            # Obtener price_id para Carlos
-            price3_q = await db.execute(select(Price).where(Price.user_id == docente3.id))
-            price3 = price3_q.scalar_one()
-            
-            pay3 = PaymentBooking(user_id=alumno.id, booking_id=booking3.id, price_id=price3.id, total_amount=35000, commission_percentage=0, commission_amount=0, teacher_amount=35000, platform_amount=0, status_id=status_approved.id if status_approved else None, stripe_payment_intent_id="pi_test3")
-            db.add(pay3)
-            await db.flush()
-            
-            assess3 = Assessment(user_id=alumno.id, payment_booking_id=pay3.id, qualification=5, comment="Excelente profesor de química, muy recomendado.")
-            db.add(assess3)
-            
-            print("✅ Docente 3 (Carlos Ramírez - Química) creado con assessment")
-        
-        # DOCENTE 4: Ana Martínez - Inglés
-        result4 = await db.execute(select(User).where(User.email == "ana.martinez@example.com"))
-        docente4 = result4.scalar_one_or_none()
-        if not docente4:
-            docente4 = User(
-                first_name="Ana",
-                last_name="Martínez",
-                email="ana.martinez@example.com",
-                password=get_password_hash("12345678"),
-                role_id=1,
-                status_id=1
-            )
-            db.add(docente4)
-            await db.flush()
-            
-            db.add(Profile(user_id=docente4.id, credential="Licenciada en Lingüística", gender="Femenino", sex="F"))
-            db.add(Preference(user_id=docente4.id, educational_level_id=1, modality_id=1, location="CDMX"))
-            await db.flush()
-            
-            pref4_q = await db.execute(select(Preference).where(Preference.user_id == docente4.id))
-            pref4 = pref4_q.scalar_one()
-            
-            db.add(Price(user_id=docente4.id, preference_id=pref4.id, price_range_id=1, selected_prices=200.0, extra_hour_price=100.0))
-            db.add(Document(user_id=docente4.id, rfc_hash="hash4", rfc_cipher="cipher4", certificate="/evidence/cert4.enc", curriculum="/evidence/cv4.enc", expertise_area="Inglés Avanzado", description="Maestra de inglés certificada TOEFL con experiencia internacional"))
-            db.add(Video(user_id=docente4.id, youtube_video_id="9No-FiEInLA", title="Presentación Ana Martínez - Inglés", thumbnail_url=None, duration_seconds=48, embed_url="https://www.youtube.com/embed/9No-FiEInLA", privacy_status="public", embeddable=True, original_url="https://www.youtube.com/watch?v=9No-FiEInLA"))
-            
-            # Crear booking y assessment para Ana
-            avail4 = Availability(user_id=docente4.id, preference_id=pref4.id, day_of_week=5, start_time="16:00:00", end_time="17:00:00")
-            db.add(avail4)
-            await db.flush()
-            
-            booking4 = Booking(user_id=alumno.id, availability_id=avail4.id, start_time=datetime(2025, 11, 7, 16, 0), end_time=datetime(2025, 11, 7, 17, 0), status_id=status_approved.id if status_approved else None, class_space="zoom")
-            db.add(booking4)
-            await db.flush()
-            
-            # Obtener price_id para Ana
-            price4_q = await db.execute(select(Price).where(Price.user_id == docente4.id))
-            price4 = price4_q.scalar_one()
-            
-            pay4 = PaymentBooking(user_id=alumno.id, booking_id=booking4.id, price_id=price4.id, total_amount=20000, commission_percentage=0, commission_amount=0, teacher_amount=20000, platform_amount=0, status_id=status_approved.id if status_approved else None, stripe_payment_intent_id="pi_test4")
-            db.add(pay4)
-            await db.flush()
-            
-            assess4 = Assessment(user_id=alumno.id, payment_booking_id=pay4.id, qualification=4, comment="Buena maestra de inglés, muy paciente.")
-            db.add(assess4)
-            
-            print("✅ Docente 4 (Ana Martínez - Inglés) creado con assessment")
-        
-        # DOCENTE 5: Roberto Silva - Programación
-        result5 = await db.execute(select(User).where(User.email == "roberto.silva@example.com"))
-        docente5 = result5.scalar_one_or_none()
-        if not docente5:
-            docente5 = User(
-                first_name="Roberto",
-                last_name="Silva",
-                email="roberto.silva@example.com",
-                password=get_password_hash("12345678"),
-                role_id=1,
-                status_id=1
-            )
-            db.add(docente5)
-            await db.flush()
-            
-            db.add(Profile(user_id=docente5.id, credential="Ingeniero en Sistemas", gender="Masculino", sex="M"))
-            db.add(Preference(user_id=docente5.id, educational_level_id=2, modality_id=1, location="Puebla"))
-            await db.flush()
-            
-            pref5_q = await db.execute(select(Preference).where(Preference.user_id == docente5.id))
-            pref5 = pref5_q.scalar_one()
-            
-            db.add(Price(user_id=docente5.id, preference_id=pref5.id, price_range_id=2, selected_prices=400.0, extra_hour_price=200.0))
-            db.add(Document(user_id=docente5.id, rfc_hash="hash5", rfc_cipher="cipher5", certificate="/evidence/cert5.enc", curriculum="/evidence/cv5.enc", expertise_area="Python y JavaScript", description="Desarrollador senior con 10 años de experiencia en desarrollo web"))
-            db.add(Video(user_id=docente5.id, youtube_video_id="8T_f5QEFqDg", title="Presentación Roberto Silva - Programación", thumbnail_url=None, duration_seconds=52, embed_url="https://www.youtube.com/embed/8T_f5QEFqDg", privacy_status="public", embeddable=True, original_url="https://www.youtube.com/watch?v=8T_f5QEFqDg"))
-            
-            # Crear booking y assessment para Roberto
-            avail5 = Availability(user_id=docente5.id, preference_id=pref5.id, day_of_week=1, start_time="18:00:00", end_time="19:00:00")
-            db.add(avail5)
-            await db.flush()
-            
-            booking5 = Booking(user_id=alumno.id, availability_id=avail5.id, start_time=datetime(2025, 11, 3, 18, 0), end_time=datetime(2025, 11, 3, 19, 0), status_id=status_approved.id if status_approved else None, class_space="zoom")
-            db.add(booking5)
-            await db.flush()
-            
-            # Obtener price_id para Roberto
-            price5_q = await db.execute(select(Price).where(Price.user_id == docente5.id))
-            price5 = price5_q.scalar_one()
-            
-            pay5 = PaymentBooking(user_id=alumno.id, booking_id=booking5.id, price_id=price5.id, total_amount=40000, commission_percentage=0, commission_amount=0, teacher_amount=40000, platform_amount=0, status_id=status_approved.id if status_approved else None, stripe_payment_intent_id="pi_test5")
-            db.add(pay5)
-            await db.flush()
-            
-            assess5 = Assessment(user_id=alumno.id, payment_booking_id=pay5.id, qualification=5, comment="El mejor profesor de programación, explica muy bien.")
-            db.add(assess5)
-            
-            print("✅ Docente 5 (Roberto Silva - Programación) creado con assessment")
 
         # =====================
         # BOOKING DE PRUEBA
@@ -606,17 +391,19 @@ async def crear_docente():
         
         availabilities = []
         for day_info in availability_days:
-            disponibilidad = Availability(
-                user_id=docente.id,
-                preference_id=preferencia.id,
-                day_of_week=day_info["day"],
-                start_time="09:00:00",
-                end_time="22:00:00"
-            )
-            db.add(disponibilidad)
-            await db.flush()
-            availabilities.append(disponibilidad)
-            print(f"✅ Availability creada: day_of_week={day_info['day']} ({day_info['name']})")
+            # Crear slots de 1 hora desde 09:00 hasta 22:00 (último slot 21:00-22:00)
+            for hour in range(9, 22):
+                slot = Availability(
+                    user_id=docente.id,
+                    preference_id=preferencia.id,
+                    day_of_week=day_info["day"],
+                    start_time=f"{hour:02d}:00:00",
+                    end_time=f"{hour+1:02d}:00:00",
+                )
+                db.add(slot)
+                await db.flush()
+                availabilities.append(slot)
+            print(f"✅ Availabilities horarias creadas para {day_info['name']} (09:00-22:00)")
 
         # =====================
         # MÚLTIPLES BOOKINGS PARA JUAN PÉREZ (HISTORIAL DE RESERVAS)
@@ -687,15 +474,19 @@ async def crear_docente():
             clase_inicio = booking_data["fecha"]
             clase_fin = clase_inicio + timedelta(hours=1)
             
-            # Buscar la availability que corresponde al día de la semana
+            # Buscar la availability que corresponde al día y hora exactos
             availability_for_day = None
+            booking_slot_start_str = clase_inicio.strftime("%H:%M:%S")
             for avail in availabilities:
-                if avail.day_of_week == booking_data["day_of_week"]:
+                if (
+                    avail.day_of_week == booking_data["day_of_week"]
+                    and str(avail.start_time) == booking_slot_start_str
+                ):
                     availability_for_day = avail
                     break
             
             if not availability_for_day:
-                print(f"❌ No se encontró availability para day_of_week={booking_data['day_of_week']}")
+                print(f"❌ No se encontró availability para day_of_week={booking_data['day_of_week']} y hora {booking_slot_start_str}")
                 continue
             
             # Validar que la hora del booking esté dentro del horario de disponibilidad
@@ -829,10 +620,17 @@ async def crear_docente():
         clase_inicio = datetime.combine(fecha_booking.date(), hora_inicio)
         clase_fin = clase_inicio + timedelta(hours=1)
 
-        # Crear booking nuevo
+        # Buscar slot específico para Martes 09:00:00
+        fixed_slot = None
+        for avail in availabilities:
+            if avail.day_of_week == 2 and str(avail.start_time) == "09:00:00":
+                fixed_slot = avail
+                break
+        
+        # Crear booking nuevo usando el slot correcto
         booking = Booking(
             user_id=alumno.id,
-            availability_id=availabilities[1].id,
+            availability_id=fixed_slot.id if fixed_slot else availabilities[0].id,
             start_time=clase_inicio,
             end_time=clase_fin,
             status_id=status_approved.id if status_approved else None,
@@ -904,5 +702,283 @@ async def crear_docente():
         else:
             print("El Assessment de prueba ya existe.")
 
+        # =====================
+        # Reservas futuras adicionales (3 más)
+        # =====================
+        futuras_fechas = [
+            datetime(2025, 12, 2),   # Martes
+            datetime(2025, 12, 9),   # Martes
+            datetime(2025, 12, 16),  # Martes
+        ]
+
+        for fecha_booking in futuras_fechas:
+            # Siempre a las 09:00:00
+            hora_inicio = datetime.strptime("09:00:00", "%H:%M:%S").time()
+            clase_inicio = datetime.combine(fecha_booking.date(), hora_inicio)
+            clase_fin = clase_inicio + timedelta(hours=1)
+
+            # Buscar slot Martes 09:00:00
+            future_slot = None
+            for avail in availabilities:
+                if avail.day_of_week == 2 and str(avail.start_time) == "09:00:00":
+                    future_slot = avail
+                    break
+
+            # Crear booking
+            future_booking = Booking(
+                user_id=alumno.id,
+                availability_id=future_slot.id if future_slot else availabilities[0].id,
+                start_time=clase_inicio,
+                end_time=clase_fin,
+                status_id=status_approved.id if status_approved else None,
+                class_space="zoom",
+            )
+            db.add(future_booking)
+            await db.flush()
+            print(f"✅ Booking futuro creado: {clase_inicio} - {clase_fin}")
+
+            # PaymentBooking asociado
+            total_amount = int(precio.selected_prices * 100)
+            future_pay = PaymentBooking(
+                user_id=alumno.id,
+                booking_id=future_booking.id,
+                price_id=precio.id,
+                total_amount=total_amount,
+                commission_percentage=0,
+                commission_amount=0,
+                teacher_amount=total_amount,
+                platform_amount=0,
+                status_id=status_approved.id if status_approved else None,
+                stripe_payment_intent_id=f"pi_future_{clase_inicio.strftime('%Y_%m_%d')}",
+            )
+            db.add(future_pay)
+            await db.flush()
+
+            # Confirmation
+            future_conf = Confirmation(
+                teacher_id=docente.id,
+                student_id=alumno.id,
+                payment_booking_id=future_pay.id,
+                confirmation_date_teacher=False,
+                confirmation_date_student=False,
+                description_teacher="Clase programada (futura)",
+                description_student="Lista para clase futura",
+            )
+            db.add(future_conf)
+
+        # =====================
+        # Booking recientemente finalizado (≤ 2 horas desde su fin)
+        # =====================
+        now = datetime.now()
+        # Ajustar fin a la hora en punto anterior (para coincidir con slots por hora)
+        recent_end = now.replace(minute=0, second=0, microsecond=0)
+        if recent_end >= now:
+            # Si justo cae en la hora exacta, restar una hora para que quede "ya finalizado"
+            recent_end = recent_end - timedelta(hours=1)
+        recent_start = recent_end - timedelta(hours=1)
+
+        # Determinar day_of_week con base en recent_start (1=Lunes ... 7=Domingo)
+        day_of_week_recent = recent_start.weekday() + 1
+        start_str = recent_start.strftime("%H:%M:%S")
+        end_str = recent_end.strftime("%H:%M:%S")
+
+        # Buscar o crear slot que coincida exactamente
+        recent_slot = None
+        for avail in availabilities:
+            if avail.day_of_week == day_of_week_recent and str(avail.start_time) == start_str:
+                recent_slot = avail
+                break
+        if not recent_slot:
+            # Crear slot dinámico para este día/hora
+            recent_slot = Availability(
+                user_id=docente.id,
+                preference_id=preferencia.id,
+                day_of_week=day_of_week_recent,
+                start_time=start_str,
+                end_time=end_str,
+            )
+            db.add(recent_slot)
+            await db.flush()
+            availabilities.append(recent_slot)
+            print(f"🆕 Slot dinámico creado para booking reciente: DOW={day_of_week_recent} {start_str}-{end_str}")
+
+        # Crear booking finalizado recientemente
+        recent_booking = Booking(
+            user_id=alumno.id,
+            availability_id=recent_slot.id,
+            start_time=recent_start,
+            end_time=recent_end,
+            status_id=status_approved.id if status_approved else None,
+            class_space="zoom",
+        )
+        db.add(recent_booking)
+        await db.flush()
+        print(f"✅ Booking reciente finalizado: {recent_start} - {recent_end} (≤ 2h desde su fin)")
+
+        # PaymentBooking para el booking reciente
+        total_amount_recent = int(precio.selected_prices * 100)
+        recent_pay = PaymentBooking(
+            user_id=alumno.id,
+            booking_id=recent_booking.id,
+            price_id=precio.id,
+            total_amount=total_amount_recent,
+            commission_percentage=0,
+            commission_amount=0,
+            teacher_amount=total_amount_recent,
+            platform_amount=0,
+            status_id=status_approved.id if status_approved else None,
+            stripe_payment_intent_id=f"pi_recent_{recent_start.strftime('%Y_%m_%d_%H')}",
+        )
+        db.add(recent_pay)
+        await db.flush()
+
+        # Confirmation del booking reciente (sin assessment al ser muy reciente)
+        recent_conf = Confirmation(
+            teacher_id=docente.id,
+            student_id=alumno.id,
+            payment_booking_id=recent_pay.id,
+            confirmation_date_teacher=False,
+            confirmation_date_student=False,
+            description_teacher="Clase finalizada recientemente",
+            description_student="Clase finalizada (reciente)",
+        )
+        db.add(recent_conf)
+
+        # =====================
+        # Booking finalizado hace ~1 hora
+        # =====================
+        onehour_end = recent_end - timedelta(hours=1)
+        onehour_start = onehour_end - timedelta(hours=1)
+        day_of_week_one = onehour_start.weekday() + 1
+        one_start_str = onehour_start.strftime("%H:%M:%S")
+        one_end_str = onehour_end.strftime("%H:%M:%S")
+
+        one_slot = None
+        for avail in availabilities:
+            if avail.day_of_week == day_of_week_one and str(avail.start_time) == one_start_str:
+                one_slot = avail
+                break
+        if not one_slot:
+            one_slot = Availability(
+                user_id=docente.id,
+                preference_id=preferencia.id,
+                day_of_week=day_of_week_one,
+                start_time=one_start_str,
+                end_time=one_end_str,
+            )
+            db.add(one_slot)
+            await db.flush()
+            availabilities.append(one_slot)
+            print(f"🆕 Slot dinámico creado (≈1h): DOW={day_of_week_one} {one_start_str}-{one_end_str}")
+
+        one_booking = Booking(
+            user_id=alumno.id,
+            availability_id=one_slot.id,
+            start_time=onehour_start,
+            end_time=onehour_end,
+            status_id=status_approved.id if status_approved else None,
+            class_space="zoom",
+        )
+        db.add(one_booking)
+        await db.flush()
+        print(f"✅ Booking finalizado ≈1h: {onehour_start} - {onehour_end}")
+
+        one_total_amount = int(precio.selected_prices * 100)
+        one_pay = PaymentBooking(
+            user_id=alumno.id,
+            booking_id=one_booking.id,
+            price_id=precio.id,
+            total_amount=one_total_amount,
+            commission_percentage=0,
+            commission_amount=0,
+            teacher_amount=one_total_amount,
+            platform_amount=0,
+            status_id=status_approved.id if status_approved else None,
+            stripe_payment_intent_id=f"pi_recent_1h_{onehour_start.strftime('%Y_%m_%d_%H')}",
+        )
+        db.add(one_pay)
+        await db.flush()
+
+        one_conf = Confirmation(
+            teacher_id=docente.id,
+            student_id=alumno.id,
+            payment_booking_id=one_pay.id,
+            confirmation_date_teacher=False,
+            confirmation_date_student=False,
+            description_teacher="Clase finalizada (~1h)",
+            description_student="Clase finalizada (~1h)",
+        )
+        db.add(one_conf)
+
+        # =====================
+        # Booking finalizado hace > 2 horas
+        # =====================
+        gt2_end = recent_end - timedelta(hours=3)
+        gt2_start = gt2_end - timedelta(hours=1)
+        day_of_week_gt2 = gt2_start.weekday() + 1
+        gt2_start_str = gt2_start.strftime("%H:%M:%S")
+        gt2_end_str = gt2_end.strftime("%H:%M:%S")
+
+        gt2_slot = None
+        for avail in availabilities:
+            if avail.day_of_week == day_of_week_gt2 and str(avail.start_time) == gt2_start_str:
+                gt2_slot = avail
+                break
+        if not gt2_slot:
+            gt2_slot = Availability(
+                user_id=docente.id,
+                preference_id=preferencia.id,
+                day_of_week=day_of_week_gt2,
+                start_time=gt2_start_str,
+                end_time=gt2_end_str,
+            )
+            db.add(gt2_slot)
+            await db.flush()
+            availabilities.append(gt2_slot)
+            print(f"🆕 Slot dinámico creado (>2h): DOW={day_of_week_gt2} {gt2_start_str}-{gt2_end_str}")
+
+        gt2_booking = Booking(
+            user_id=alumno.id,
+            availability_id=gt2_slot.id,
+            start_time=gt2_start,
+            end_time=gt2_end,
+            status_id=status_approved.id if status_approved else None,
+            class_space="zoom",
+        )
+        db.add(gt2_booking)
+        await db.flush()
+        print(f"✅ Booking finalizado >2h: {gt2_start} - {gt2_end}")
+
+        gt2_total_amount = int(precio.selected_prices * 100)
+        gt2_pay = PaymentBooking(
+            user_id=alumno.id,
+            booking_id=gt2_booking.id,
+            price_id=precio.id,
+            total_amount=gt2_total_amount,
+            commission_percentage=0,
+            commission_amount=0,
+            teacher_amount=gt2_total_amount,
+            platform_amount=0,
+            status_id=status_approved.id if status_approved else None,
+            stripe_payment_intent_id=f"pi_recent_gt2h_{gt2_start.strftime('%Y_%m_%d_%H')}",
+        )
+        db.add(gt2_pay)
+        await db.flush()
+
+        gt2_conf = Confirmation(
+            teacher_id=docente.id,
+            student_id=alumno.id,
+            payment_booking_id=gt2_pay.id,
+            confirmation_date_teacher=False,
+            confirmation_date_student=False,
+            description_teacher=">2h desde fin",
+            description_student=">2h desde fin",
+        )
+        db.add(gt2_conf)
+
         await db.commit()
         print("Docente de prueba creado con documentos, video, alumno, booking, payment_booking, confirmation y assessment.")
+
+# Seed orchestrator disabled; usar crear_docente() desde app/__init__.py
+async def seed_all():
+    return None

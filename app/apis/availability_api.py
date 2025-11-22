@@ -164,13 +164,23 @@ async def delete_availability(
     """
     Eliminar disponibilidad del docente autenticado
     """
-    await delete_teacher_availability(
+    result = await delete_teacher_availability(
         db=db,
         user_data=user_data,
         availability_id=availability_id
     )
     
-    return {
-        "success": True,
-        "message": "Disponibilidad eliminada exitosamente"
-    }
+    # Respuesta diferenciada: warning (success=False) si hay reservas y fue desactivada, success=True si fue eliminada
+    if result.get("action") == "deactivated":
+        return {
+            "success": False,
+            "message": result.get("warning", "La disponibilidad fue desactivada por tener reservas activas. Debes cumplir con esas reservas."),
+            "warning": result.get("warning", "La disponibilidad fue desactivada por tener reservas activas. Debes cumplir con esas reservas."),
+            "action": "deactivated",
+        }
+    else:
+        return {
+            "success": True,
+            "message": "Disponibilidad eliminada exitosamente.",
+            "action": "deleted",
+        }
