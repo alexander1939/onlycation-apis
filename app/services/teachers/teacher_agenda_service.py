@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, extract, cast, Time, func, case, Integer
 from datetime import datetime, timedelta, timezone, time as dt_time
 from typing import Dict, List, Optional
 import logging
@@ -21,102 +21,125 @@ async def get_teacher_weekly_agenda(
     Obtener la agenda semanal del docente (lunes a domingo)
     """
     try:
-        # Verificar que el usuario sea docente
         user_role = user_data.get("role")
         if user_role != "teacher":
             raise HTTPException(status_code=403, detail="Solo los docentes pueden acceder a esta funcionalidad")
         
         teacher_id = user_data["user_id"]
         
-        # Configurar fechas de la semana (lunes a domingo)
+        # Lógica de fechas unificada
         if not week_start_date:
-            current_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)  # Mexico time
-            # Encontrar el lunes de esta semana
+            current_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)
             days_since_monday = current_date.weekday()
-            week_start_date = current_date - timedelta(days=days_since_monday)
-        
-        week_start_date = week_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_end_date = week_start_date + timedelta(days=6)  # Domingo
-        
-        # Verificar que el docente existe y cargar su rol
-        teacher_query = select(User).options(
-            selectinload(User.role)
-        ).where(User.id == teacher_id)
-        teacher_result = await db.execute(teacher_query)
-        teacher = teacher_result.scalar_one_or_none()
-        
-        if not teacher:
-            raise HTTPException(status_code=404, detail="Docente no encontrado")
-        
-        # Debug: imprimir el rol del usuario
-        role_name = teacher.role.name if teacher.role else "Sin rol"
-        
-        if not teacher.role or teacher.role.name != "teacher":
-            raise HTTPException(status_code=403, detail=f"El usuario especificado no es un docente. Rol actual: {role_name}")
-        
-        # 1. Obtener disponibilidades del docente en el rango de fechas
-        availability_query = select(Availability).options(
-            selectinload(Availability.preference)
-        ).where(
+            week_start = (current_date - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            week_start = week_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        week_end_date = week_start + timedelta(days=6)
+
+        # 1. Obtener TODAS las disponibilidades activas del docente (por día de semana)
+        availability_query = select(Availability).where(
             Availability.user_id == teacher_id,
-            Availability.start_time >= week_start_date,
-            Availability.start_time <= week_end_date
-        ).order_by(Availability.start_time)
+            Availability.is_active == True
+        ).order_by(Availability.day_of_week, Availability.start_time)
         
         availability_result = await db.execute(availability_query)
-        availabilities = availability_result.scalars().all()
+        all_availabilities = availability_result.scalars().all()
         
-        # 2. Obtener reservas ocupadas del docente en el rango de fechas
-        # Solo incluir bookings con status activos (no cancelados, inactivos, etc.)
-        booking_query = select(Booking).options(
-            selectinload(Booking.availability),
-            selectinload(Booking.status)
-        ).join(Availability).join(Status).where(
+        # 2. Obtener TODAS las reservas del docente en el rango de fechas, filtrar por docente usando Availability
+        booking_query = select(Booking).join(
+            Availability, Booking.availability_id == Availability.id
+        ).join(
+            Status, Booking.status_id == Status.id
+        ).options(selectinload(Booking.status)).where(
             Availability.user_id == teacher_id,
-            Booking.start_time >= week_start_date,
-            Booking.start_time <= week_end_date,
+            Booking.start_time >= week_start,
+            Booking.start_time <= week_end_date + timedelta(days=1),
             Status.name.in_(["active", "approved", "paid", "occupied"])
         ).order_by(Booking.start_time)
         
         booking_result = await db.execute(booking_query)
         bookings = booking_result.scalars().all()
-        
-        
-        # 3. Construir la agenda semanal (lunes a domingo)
+
+        # 3. Construir la agenda (lógica por horas + overlay de reservas)
         days = []
         day_names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-        current_date = week_start_date
+        current_date = week_start
         
-        for i in range(7):  # 7 días de la semana
-            date_str = current_date.strftime('%Y-%m-%d')
-            daily_slots = []
-            
-            # Obtener disponibilidades del día actual
+        for i in range(7):
+            python_weekday = current_date.weekday()
+            our_day_of_week = python_weekday + 1
+
             day_availabilities = [
-                av for av in availabilities 
-                if av.start_time.date() == current_date.date()
+                av for av in all_availabilities 
+                if av.day_of_week == our_day_of_week
             ]
             
-            # Para cada disponibilidad del día, generar slots
-            for availability in day_availabilities:
-                slots = generate_time_slots(availability, bookings)
-                daily_slots.extend(slots)
+            day_bookings = [
+                booking for booking in bookings 
+                if booking.start_time.date() == current_date.date()
+            ]
             
-            # Ordenar slots por hora
-            daily_slots.sort(key=lambda x: x['start_time'])
+            # Mapa de slots por hora: "HH:MM" -> slot
+            slot_map: Dict[str, Dict] = {}
+
+            # 1) Generar slots por hora desde disponibilidades activas (default: available)
+            for av in day_availabilities:
+                try:
+                    av_start_dt = datetime.combine(current_date.date(), datetime.strptime(av.start_time, "%H:%M:%S").time())
+                    av_end_dt = datetime.combine(current_date.date(), datetime.strptime(av.end_time, "%H:%M:%S").time())
+                    if av_end_dt <= av_start_dt:
+                        av_end_dt += timedelta(days=1)
+                    cur = av_start_dt
+                    while cur < av_end_dt:
+                        nxt = cur + timedelta(hours=1)
+                        key = cur.strftime("%H:%M")
+                        slot_map[key] = {
+                            "start_time": key,
+                            "end_time": nxt.strftime("%H:%M"),
+                            "status": "available",
+                            "availability_id": av.id,
+                        }
+                        cur = nxt
+                except Exception:
+                    continue
+
+            # 2) Superponer reservas: crear/actualizar slots como occupied aunque no exista disponibilidad
+            for bk in day_bookings:
+                # Alinear al inicio de la hora (asumimos reservas creadas en horas exactas)
+                cur = bk.start_time.replace(minute=0, second=0, microsecond=0)
+                end = bk.end_time
+                while cur < end:
+                    nxt = cur + timedelta(hours=1)
+                    key = cur.strftime("%H:%M")
+                    if key not in slot_map:
+                        slot_map[key] = {
+                            "start_time": key,
+                            "end_time": nxt.strftime("%H:%M"),
+                            "status": "occupied",
+                            "availability_id": getattr(bk, "availability_id", None),
+                        }
+                    else:
+                        slot_map[key]["status"] = "occupied"
+                        if not slot_map[key].get("availability_id"):
+                            slot_map[key]["availability_id"] = getattr(bk, "availability_id", None)
+                    cur = nxt
+
+            day_slots = sorted(slot_map.values(), key=lambda x: x["start_time"])
             
             days.append({
-                "date": date_str,
-                "day_name": day_names[i],
-                "slots": daily_slots
+                "date": current_date.strftime("%Y-%m-%d"),
+                "day_name": day_names[python_weekday],
+                "slots": day_slots
             })
             
             current_date += timedelta(days=1)
         
+        teacher = await db.get(User, teacher_id)
         return {
             "teacher_id": teacher_id,
             "teacher_name": f"{teacher.first_name} {teacher.last_name}",
-            "week_start": week_start_date.strftime('%Y-%m-%d'),
+            "week_start": week_start.strftime('%Y-%m-%d'),
             "week_end": week_end_date.strftime('%Y-%m-%d'),
             "days": days
         }
@@ -126,64 +149,8 @@ async def get_teacher_weekly_agenda(
         raise
     except Exception as e:
         await db.rollback()
+        print(f"Error obteniendo agenda: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
-
-def generate_time_slots(availability: Availability, bookings: List[Booking]) -> List[Dict]:
-    """
-    Generar slots de tiempo por horas exactas para una disponibilidad
-    """
-    slots = []
-    current_time = availability.start_time  # Ya es datetime
-    end_time = availability.end_time  # Ya es datetime
-    
-    # Generar slots de 1 hora
-    while current_time < end_time:
-        slot_end = current_time + timedelta(hours=1)
-        
-        # Verificar si este slot está ocupado por alguna reserva
-        is_occupied = False
-        booking_status = None
-        
-        for booking in bookings:
-            # Verificar si hay overlap entre el slot y la reserva
-            if (booking.start_time < slot_end and 
-                booking.end_time > current_time and
-                booking.availability_id == availability.id):
-                is_occupied = True
-                booking_status = booking.status.name if booking.status else "occupied"
-                break
-        
-        # Determinar el estado del slot
-        if is_occupied:
-            status = "occupied" if booking_status in ["confirmed", "active"] else "pending"
-        else:
-            status = "available"
-        
-        slot = {
-            "start_time": current_time.strftime('%H:%M'),
-            "end_time": slot_end.strftime('%H:%M'),
-            "status": status,
-            "availability_id": availability.id
-        }
-        
-        slots.append(slot)
-        current_time = slot_end
-    
-    return slots
-
-def dt_time_to_datetime(time_obj):
-    """
-    Convertir time a datetime si es necesario
-    Si ya es datetime, devolver tal cual
-    """
-    from datetime import time as dt_time
-    
-    if isinstance(time_obj, datetime):
-        return time_obj
-    elif isinstance(time_obj, dt_time):
-        return datetime.combine(datetime.now().date(), time_obj)
-    else:
-        return time_obj
 
 async def get_teacher_availability_summary(
     db: AsyncSession,
@@ -207,7 +174,8 @@ async def get_teacher_availability_summary(
         availability_query = select(Availability).where(
             Availability.user_id == teacher_id,
             Availability.start_time >= start_date,
-            Availability.start_time <= end_date
+            Availability.start_time <= end_date,
+            Availability.is_active == True
         )
         availability_result = await db.execute(availability_query)
         availabilities = availability_result.scalars().all()
@@ -306,22 +274,23 @@ async def get_public_teacher_weekly_agenda(
         if not teacher.role or teacher.role.name != "teacher":
             raise HTTPException(status_code=403, detail=f"El usuario especificado no es un docente. Rol actual: {role_name}")
         
-        # 1. Obtener TODAS las disponibilidades del docente (son recurrentes por día de semana)
+        # 1. Obtener TODAS las disponibilidades activas del docente
         availability_query = select(Availability).options(
             selectinload(Availability.preference)
         ).where(
-            Availability.user_id == teacher_id
+            Availability.user_id == teacher_id,
+            Availability.is_active == True
         ).order_by(Availability.day_of_week, Availability.start_time)
         
         availability_result = await db.execute(availability_query)
         all_availabilities = availability_result.scalars().all()
         
-        # 2. Obtener reservas ocupadas del docente en el rango de fechas específico
-        # Solo incluir bookings con status activos (no cancelados, inactivos, etc.)
-        booking_query = select(Booking).options(
-            selectinload(Booking.availability),
-            selectinload(Booking.status)
-        ).join(Availability).join(Status).where(
+        # 2. Obtener reservas ocupadas del docente en el rango de fechas, filtrar por docente usando Availability
+        booking_query = select(Booking).join(
+            Availability, Booking.availability_id == Availability.id
+        ).join(
+            Status, Booking.status_id == Status.id
+        ).options(selectinload(Booking.status)).where(
             Availability.user_id == teacher_id,
             Booking.start_time >= week_start,
             Booking.start_time <= week_end_date + timedelta(days=1),
@@ -332,16 +301,14 @@ async def get_public_teacher_weekly_agenda(
         bookings = booking_result.scalars().all()
         
         
-        # 3. Construir la agenda (días del rango especificado)
+        # 3. Construir la agenda (días del rango especificado) con slots por hora + overlay de reservas
         days = []
         day_names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
         current_date = week_start
         
         for i in range(num_days):  # Iterar sobre el número de días del rango
-            # Mapear día de la semana (Python: 0=Monday, 1=Tuesday...)
-            # Pero nuestro sistema usa 1=Monday, 2=Tuesday...
             python_weekday = current_date.weekday()  # 0=Monday, 1=Tuesday, ..., 6=Sunday
-            our_day_of_week = python_weekday + 1 if python_weekday < 6 else 7  # 1=Monday, 2=Tuesday, ..., 7=Sunday
+            our_day_of_week = python_weekday + 1 if python_weekday < 6 else 7  # 1=Monday, ..., 7=Sunday
                         
             # Filtrar disponibilidades para este día de la semana
             day_availabilities = [
@@ -355,46 +322,51 @@ async def get_public_teacher_weekly_agenda(
                 if booking.start_time.date() == current_date.date()
             ]
             
-            
-            # Generar slots de tiempo para este día
-            day_slots = []
-            for availability in day_availabilities:
-                # Convertir strings de hora a datetime para este día específico
-                start_time_obj = datetime.strptime(availability.start_time, "%H:%M:%S").time()
-                end_time_obj = datetime.strptime(availability.end_time, "%H:%M:%S").time()
-                
-                # Crear datetime completo para este día
-                slot_start = datetime.combine(current_date.date(), start_time_obj)
-                slot_end = datetime.combine(current_date.date(), end_time_obj)
-                
-                # Verificar si este slot está ocupado por alguna reserva
-                is_occupied = False
-                booking_status = None
-                
-                for booking in day_bookings:
-                    
-                    # Verificar si hay overlap entre el slot y la reserva
-                    if (booking.start_time < slot_end and 
-                        booking.end_time > slot_start and
-                        booking.availability_id == availability.id):
-                        is_occupied = True
-                        booking_status = booking.status.name if booking.status else "occupied"
-                        break
-                
-                # Determinar el estado del slot
-                if is_occupied:
-                    status = "occupied" if booking_status in ["confirmed", "active", "approved", "paid"] else "pending"
-                else:
-                    status = "available"
-                
-                slot = {
-                    "start_time": availability.start_time[:5],  # "09:00"
-                    "end_time": availability.end_time[:5],      # "10:00"
-                    "status": status,
-                    "availability_id": availability.id
-                }
-                
-                day_slots.append(slot)
+            # Mapa de slots por hora
+            slot_map: Dict[str, Dict] = {}
+
+            # 1) Generar slots por hora desde disponibilidades activas (default: available)
+            for av in day_availabilities:
+                try:
+                    av_start_dt = datetime.combine(current_date.date(), datetime.strptime(av.start_time, "%H:%M:%S").time())
+                    av_end_dt = datetime.combine(current_date.date(), datetime.strptime(av.end_time, "%H:%M:%S").time())
+                    if av_end_dt <= av_start_dt:
+                        av_end_dt += timedelta(days=1)
+                    cur = av_start_dt
+                    while cur < av_end_dt:
+                        nxt = cur + timedelta(hours=1)
+                        key = cur.strftime("%H:%M")
+                        slot_map[key] = {
+                            "start_time": key,
+                            "end_time": nxt.strftime("%H:%M"),
+                            "status": "available",
+                            "availability_id": av.id,
+                        }
+                        cur = nxt
+                except Exception:
+                    continue
+
+            # 2) Superponer reservas: crear/actualizar slots como occupied aunque no exista disponibilidad
+            for bk in day_bookings:
+                cur = bk.start_time.replace(minute=0, second=0, microsecond=0)
+                end = bk.end_time
+                while cur < end:
+                    nxt = cur + timedelta(hours=1)
+                    key = cur.strftime("%H:%M")
+                    if key not in slot_map:
+                        slot_map[key] = {
+                            "start_time": key,
+                            "end_time": nxt.strftime("%H:%M"),
+                            "status": "occupied",
+                            "availability_id": getattr(bk, "availability_id", None),
+                        }
+                    else:
+                        slot_map[key]["status"] = "occupied"
+                        if not slot_map[key].get("availability_id"):
+                            slot_map[key]["availability_id"] = getattr(bk, "availability_id", None)
+                    cur = nxt
+
+            day_slots = sorted(slot_map.values(), key=lambda x: x["start_time"])
             
             days.append({
                 "date": current_date.strftime("%Y-%m-%d"),
@@ -402,7 +374,7 @@ async def get_public_teacher_weekly_agenda(
                 "slots": day_slots,
                 "total_slots": len(day_slots),
                 "available_slots": len([s for s in day_slots if s["status"] == "available"]),
-                "occupied_slots": len([s for s in day_slots if s["status"] == "occupied"])
+                "occupied_slots": len([s for s in day_slots if s["status"] == "occupied"]),
             })
             
             current_date += timedelta(days=1)
@@ -418,7 +390,7 @@ async def get_public_teacher_weekly_agenda(
                 "days_with_availability": len([d for d in days if d["total_slots"] > 0]),
                 "total_slots": sum(d["total_slots"] for d in days),
                 "available_slots": sum(d["available_slots"] for d in days),
-                "occupied_slots": sum(d["occupied_slots"] for d in days)
+                "occupied_slots": sum(d["occupied_slots"] for d in days),
             }
         }
         
@@ -504,7 +476,7 @@ async def create_teacher_availability(
         if start_time >= end_time:
             await db.rollback()
             raise HTTPException(status_code=400, detail="La hora de inicio debe ser anterior a la hora de fin")
-        
+
         # Validar que las horas sean exactas (sin minutos)
         if start_time.minute != 0 or start_time.second != 0 or start_time.microsecond != 0:
             await db.rollback()
@@ -553,14 +525,13 @@ async def update_teacher_availability(
     user_data: dict,
     availability_id: int,
     availability_data: dict
-) -> Dict:
+) -> Availability:
     """
-    Actualizar disponibilidad del docente autenticado
+    Actualizar una disponibilidad existente del docente.
     """
     try:
         teacher_id = user_data["user_id"]
         
-        # Verificar que la disponibilidad existe y pertenece al docente
         availability_query = select(Availability).where(
             Availability.id == availability_id,
             Availability.user_id == teacher_id
@@ -570,107 +541,95 @@ async def update_teacher_availability(
         
         if not availability:
             raise HTTPException(status_code=404, detail="Disponibilidad no encontrada")
-        
-        # Verificar que no hay reservas activas en esta disponibilidad
-        active_bookings_query = select(Booking).join(Status).where(
-            Booking.availability_id == availability_id,
-            Status.name.in_(["active", "approved", "paid", "occupied"])
-        )
-        active_bookings_result = await db.execute(active_bookings_query)
-        active_bookings = active_bookings_result.scalars().all()
-        
-        if active_bookings:
-            raise HTTPException(
-                status_code=409, 
-                detail="No se puede editar la disponibilidad porque tiene reservas activas"
-            )
-        
+
         # Validar y actualizar campos si se proporcionan
         if "start_time" in availability_data and "end_time" in availability_data:
             from datetime import time as dt_time
             start_time = dt_time.fromisoformat(availability_data["start_time"])
             end_time = dt_time.fromisoformat(availability_data["end_time"])
             
-            # Validaciones de tiempo
             if start_time >= end_time:
                 await db.rollback()
                 raise HTTPException(status_code=400, detail="La hora de inicio debe ser anterior a la hora de fin")
-            
-            if start_time.minute != 0 or start_time.second != 0 or start_time.microsecond != 0:
-                await db.rollback()
-                raise HTTPException(status_code=400, detail="La hora de inicio debe ser una hora exacta")
-            
-            if end_time.minute != 0 or end_time.second != 0 or end_time.microsecond != 0:
-                await db.rollback()
-                raise HTTPException(status_code=400, detail="La hora de fin debe ser una hora exacta")
-            
-            availability.start_time = start_time
-            availability.end_time = end_time
-        
-        if "preference_id" in availability_data:
-            availability.preference_id = availability_data["preference_id"]
-        
+
+            availability.start_time = availability_data["start_time"]
+            availability.end_time = availability_data["end_time"]
+
         if "day_of_week" in availability_data:
             availability.day_of_week = availability_data["day_of_week"]
-        
+
+        if "is_active" in availability_data:
+            availability.is_active = availability_data["is_active"]
+
         await db.commit()
         await db.refresh(availability)
-        
-        return {
-            "id": availability.id,
-            "user_id": availability.user_id,
-            "preference_id": availability.preference_id,
-            "day_of_week": availability.day_of_week,
-            "start_time": availability.start_time.strftime("%H:%M"),
-            "end_time": availability.end_time.strftime("%H:%M"),
-            "updated_at": availability.updated_at.isoformat()
-        }
-        
+        return availability
+
     except HTTPException:
         await db.rollback()
         raise
     except Exception as e:
         await db.rollback()
+        print(f"Error actualizando disponibilidad: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
+
 
 async def delete_teacher_availability(
     db: AsyncSession,
     user_data: dict,
     availability_id: int
-) -> None:
+) -> Dict:
     """
-    Eliminar disponibilidad del docente autenticado
+    Elimina una disponibilidad de forma inteligente:
+    - Si hay reservas (pasadas o futuras), la desactiva (soft delete).
+    - Si no hay ninguna reserva asociada, la elimina permanentemente (hard delete).
     """
     try:
         teacher_id = user_data["user_id"]
         
-        # Verificar que la disponibilidad existe y pertenece al docente
-        availability_query = select(Availability).where(
-            Availability.id == availability_id,
-            Availability.user_id == teacher_id
-        )
-        availability_result = await db.execute(availability_query)
-        availability = availability_result.scalar_one_or_none()
-        
-        if not availability:
+        availability = await db.get(Availability, availability_id)
+        if not availability or availability.user_id != teacher_id:
             raise HTTPException(status_code=404, detail="Disponibilidad no encontrada")
-        
-        # Verificar que no hay reservas activas en esta disponibilidad
-        active_bookings_query = select(Booking).join(Status).where(
-            Booking.availability_id == availability_id,
-            Status.name.in_(["active", "approved", "paid", "occupied"])
+
+        # 1. Contar TODAS las reservas asociadas a esta disponibilidad
+        total_bookings_query = select(func.count(Booking.id)).where(
+            Booking.availability_id == availability_id
         )
-        active_bookings_result = await db.execute(active_bookings_query)
-        active_bookings = active_bookings_result.scalars().all()
-        
-        if active_bookings:
-            raise HTTPException(
-                status_code=409, 
-                detail="No se puede eliminar la disponibilidad porque tiene reservas activas"
+        total_bookings_count = await db.scalar(total_bookings_query)
+
+        # 2. Si hay CUALQUIER reserva (pasada o futura), se desactiva
+        if total_bookings_count > 0:
+            availability.is_active = False
+            await db.commit()
+            
+            # (Opcional) Verificar si alguna de esas reservas es futura para dar una advertencia más específica
+            future_bookings_query = select(func.count(Booking.id)).where(
+                Booking.availability_id == availability_id,
+                Booking.start_time >= datetime.now()
             )
-        
-        await db.delete(availability)
-        await db.commit()
+            future_bookings_count = await db.scalar(future_bookings_query)
+
+            # Mensaje claro para el usuario (singular/plural y acciones)
+            if future_bookings_count and future_bookings_count > 0:
+                palabra = "reserva" if future_bookings_count == 1 else "reservas"
+                adjetivo = "futura" if future_bookings_count == 1 else "futuras"
+                message = (
+                    f"La disponibilidad fue eliminada del listado y desactivada para nuevas reservas, "
+                    f"pero tienes {future_bookings_count} {palabra} {adjetivo} que debes cumplir. "
+                    f"Las clases ya agendadas se mantienen."
+                )
+            else:
+                message = (
+                    "La disponibilidad fue eliminada del listado y desactivada para mantener el historial de reservas. "
+                    "No se permite la eliminación definitiva mientras existan reservas asociadas."
+                )
+
+            return {"warning": message, "action": "deactivated"}
+        else:
+            # 3. Si no hay NINGUNA reserva, se elimina permanentemente
+            await db.delete(availability)
+            await db.commit()
+            return {"warning": None, "action": "deleted"}
         
     except HTTPException:
         await db.rollback()
@@ -695,9 +654,10 @@ async def get_teacher_availability_list(
         if user_data.get("role") != "teacher":
             raise HTTPException(status_code=403, detail="Solo los docentes pueden acceder a esta funcionalidad")
         
-        # Obtener todas las disponibilidades del docente
+        # Obtener todas las disponibilidades activas del docente
         query = select(Availability).where(
-            Availability.user_id == teacher_id
+            Availability.user_id == teacher_id,
+            Availability.is_active == True
         ).order_by(Availability.day_of_week, Availability.start_time)
         
         result = await db.execute(query)
@@ -763,3 +723,60 @@ async def get_teacher_availability_list(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+def dt_time_to_datetime(time_obj):
+    """
+    Convertir time a datetime si es necesario
+    Si ya es datetime, devolver tal cual
+    """
+    from datetime import time as dt_time
+    
+    if isinstance(time_obj, datetime):
+        return time_obj
+    elif isinstance(time_obj, dt_time):
+        return datetime.combine(datetime.now().date(), time_obj)
+    else:
+        return time_obj
+
+def generate_time_slots(availability: Availability, bookings: List[Booking]) -> List[Dict]:
+    """
+    Generar slots de tiempo por horas exactas para una disponibilidad
+    """
+    slots = []
+    current_time = datetime.strptime(availability.start_time, "%H:%M:%S")  # Ya es datetime
+    end_time = datetime.strptime(availability.end_time, "%H:%M:%S")  # Ya es datetime
+    
+    # Generar slots de 1 hora
+    while current_time < end_time:
+        slot_end = current_time + timedelta(hours=1)
+        
+        # Verificar si este slot está ocupado por alguna reserva
+        is_occupied = False
+        booking_status = None
+        
+        for booking in bookings:
+            # Verificar si hay overlap entre el slot y la reserva
+            if (booking.start_time < slot_end and 
+                booking.end_time > current_time and
+                booking.availability_id == availability.id):
+                is_occupied = True
+                booking_status = booking.status.name if booking.status else "occupied"
+                break
+        
+        # Determinar el estado del slot
+        if is_occupied:
+            status = "occupied" if booking_status in ["confirmed", "active"] else "pending"
+        else:
+            status = "available"
+        
+        slot = {
+            "start_time": current_time.strftime('%H:%M'),
+            "end_time": slot_end.strftime('%H:%M'),
+            "status": status,
+            "availability_id": availability.id
+        }
+        
+        slots.append(slot)
+        current_time = slot_end
+    
+    return slots

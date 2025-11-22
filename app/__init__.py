@@ -117,19 +117,19 @@ async def lifespan(app: FastAPI):
         # Crea las tablas en la base de datos
         await conn.run_sync(Base.metadata.create_all)
     #Crean o ejecutan los script para los datos(roles,status, etc..)
-    #await create_status()
-    #await create_modality()
-    #await create_role()
-    #await create_educational_level()
-    #await create_privileges()
-    #await create_privileges_role()
-    #await create_admin_user()
-    #await create_prices_range()
-    #await create_premium_plan()
-    #await create_free_plan()
-    #await create_benefit()
-   # await crear_docente()  # Comentado: solo para testing, borra datos en cada inicio
-    #await create_categories()
+    await create_status()
+    await create_modality()
+    await create_role()
+    await create_educational_level()
+    await create_privileges()
+    await create_privileges_role()
+    await create_admin_user()
+    await create_prices_range()
+    await create_premium_plan()
+    await create_free_plan()
+    await create_benefit()
+    await crear_docente()  # Comentado: solo para testing, borra datos en cada inicio
+    await create_categories()
 
     yield
 
