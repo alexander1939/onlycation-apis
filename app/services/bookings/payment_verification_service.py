@@ -65,7 +65,8 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
     if booking_mode == "multi" or session.metadata.get("blocks"):
         try:
             blocks = json.loads(session.metadata.get("blocks", "[]"))
-            segments = json.loads(session.metadata.get("segments", "[]"))
+            # 'segments' puede no existir en el nuevo formato compacto; mantener opcional
+            segments = json.loads(session.metadata.get("segments", "[]")) if session.metadata.get("segments") else []
         except Exception:
             raise HTTPException(status_code=400, detail="Metadata inválida para reservas múltiples")
 
@@ -85,6 +86,26 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
                     return int(seg["availability_id"])
             return int(segments[0]["availability_id"]) if segments else 0
 
+        # Resolver campos de bloque soportando formato compacto {s,e,h,a,p} y formato previo {start_time,end_time,amount_cents}
+        def resolve_block_fields(blk):
+            # Formato compacto
+            if isinstance(blk, dict) and ("s" in blk and "e" in blk):
+                b_start_iso = blk["s"]
+                b_end_iso = blk["e"]
+                b_start = datetime.fromisoformat(b_start_iso)
+                b_end = datetime.fromisoformat(b_end_iso)
+                amount_cents = int(blk.get("p", 0))
+                availability_id = int(blk["a"]) if blk.get("a") is not None else find_availability_for_block(b_start_iso)
+                return b_start, b_end, availability_id, amount_cents
+            # Formato previo
+            b_start_iso = blk["start_time"] if isinstance(blk.get("start_time"), str) else blk.get("start_time").isoformat()
+            b_end_iso = blk["end_time"] if isinstance(blk.get("end_time"), str) else blk.get("end_time").isoformat()
+            b_start = datetime.fromisoformat(b_start_iso)
+            b_end = datetime.fromisoformat(b_end_iso)
+            amount_cents = int(blk.get("amount_cents", 0))
+            availability_id = int(blk.get("availability_id")) if blk.get("availability_id") is not None else find_availability_for_block(b_start_iso)
+            return b_start, b_end, availability_id, amount_cents
+
         user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one()
         active_status = await get_active_status(db)
@@ -94,11 +115,9 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
         created_confirmation_ids = []
 
         for blk in blocks:
-            b_start = datetime.fromisoformat(blk["start_time"]) if isinstance(blk["start_time"], str) else blk["start_time"]
-            b_end = datetime.fromisoformat(blk["end_time"]) if isinstance(blk["end_time"], str) else blk["end_time"]
-            block_amount_cents = int(blk.get("amount_cents", 0))
-            availability_id = find_availability_for_block(blk["start_time"]) if isinstance(blk["start_time"], str) else find_availability_for_block(blk["start_time"].isoformat())
+            b_start, b_end, availability_id, block_amount_cents = resolve_block_fields(blk)
 
+            # Crear Booking por bloque
             booking = Booking(
                 user_id=user_id,
                 availability_id=availability_id,

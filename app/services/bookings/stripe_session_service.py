@@ -132,7 +132,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         commission_rate = await get_teacher_commission_rate(db, teacher_id)
         teacher_wallet = await get_teacher_wallet(db, teacher_id)
 
-        # 8. Agrupar segmentos en bloques contiguos (hora extra solo dentro del bloque)
+        # 8. Agrupar segmentos en Asesoriass contiguos (hora extra solo dentro del Asesorias)
         segments.sort(key=lambda x: x["start"])
         blocks = []
         b_s, b_e = segments[0]["start"], segments[0]["end"]
@@ -144,7 +144,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
                 b_s, b_e = seg["start"], seg["end"]
         blocks.append({"start": b_s, "end": b_e})
 
-        # 9. Calcular precios por bloque y construir line_items
+        # 9. Calcular precios por Asesorias y construir line_items
         line_items = []
         blocks_meta = []
         total_amount_cents = 0
@@ -154,7 +154,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         for idx, blk in enumerate(blocks, 1):
             hours = int((blk["end"] - blk["start"]).total_seconds() // 3600)
             if hours <= 0:
-                raise HTTPException(status_code=400, detail="Cada bloque debe tener duración positiva en horas")
+                raise HTTPException(status_code=400, detail="Cada Asesorias debe tener duración positiva en horas")
             block_price = float(price.selected_prices) + (hours - 1) * float(price.extra_hour_price)
             block_amount_cents = int(block_price * 100)
             c_amt, t_amt = calculate_commission_amounts(block_amount_cents, commission_rate)
@@ -163,22 +163,30 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             total_amount_cents += block_amount_cents
             total_hours_all += hours
 
+            # availability_id del Asesorias: el del primer segmento que inicia el Asesorias
+            try:
+                availability_id_for_block = next(seg["availability_id"] for seg in segments if seg["start"] == blk["start"])  # type: ignore
+            except StopIteration:
+                availability_id_for_block = segments[0]["availability_id"] if segments else base_avail.id  # fallback
+
             line_items.append({
                 "price_data": {
                     "currency": "mxn",
                     "product_data": {
-                        "name": f"Clase con {base_avail.user.first_name} {base_avail.user.last_name} - Bloque {idx}",
-                        "description": f"Bloque de {hours}h - {blk['start'].strftime('%d/%m/%Y %H:%M')} a {blk['end'].strftime('%d/%m/%Y %H:%M')}",
+                        "name": f"Clase con {base_avail.user.first_name} {base_avail.user.last_name} - Asesoria {idx}",
+                        "description": f"Asesoria de {hours}h - {blk['start'].strftime('%d/%m/%Y %H:%M')} a {blk['end'].strftime('%d/%m/%Y %H:%M')}",
                     },
                     "unit_amount": block_amount_cents,
                 },
                 "quantity": 1,
             })
+            # Usar claves cortas para mantener metadata < 500 chars por valor
             blocks_meta.append({
-                "start_time": blk["start"].isoformat(),
-                "end_time": blk["end"].isoformat(),
-                "hours": hours,
-                "amount_cents": block_amount_cents,
+                "s": blk["start"].isoformat(),
+                "e": blk["end"].isoformat(),
+                "h": hours,
+                "a": int(availability_id_for_block),
+                "p": block_amount_cents,
             })
 
         # 10. Crear sesión Stripe con múltiples line_items
@@ -201,10 +209,8 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
                 "teacher_amount": str(total_teacher_amount),
                 "teacher_stripe_account_id": teacher_wallet.stripe_account_id,
                 "total_hours": str(total_hours_all),
-                "segments": json.dumps([
-                    {"availability_id": seg["availability_id"], "start_time": seg["start"].isoformat(), "end_time": seg["end"].isoformat()} for seg in segments
-                ]),
-                "blocks": json.dumps(blocks_meta),
+                # Solo enviamos Asesoriass con claves cortas para no exceder el límite de 500 chars por valor
+                "blocks": json.dumps(blocks_meta, separators=(",", ":")),
             },
         }
         if total_commission_amount > 0:
@@ -231,7 +237,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     else:
         requested_end = booking_data.end_time
 
-    # 2.b Validar que los horarios sean en horas exactas (HH:00) para garantizar bloques corridos
+    # 2.b Validar que los horarios sean en horas exactas (HH:00) para garantizar Asesoriass corridos
     if (
         requested_start.minute != 0 or requested_start.second != 0 or requested_start.microsecond != 0 or
         requested_end.minute != 0 or requested_end.second != 0 or requested_end.microsecond != 0
@@ -280,7 +286,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     avail_rows = avail_rows_result.scalars().all()
     avail_set = {(row.start_time, row.end_time) for row in avail_rows}
 
-    # Generar los bloques horarios requeridos [start, end) en pasos de 1h
+    # Generar los Asesoriass horarios requeridos [start, end) en pasos de 1h
     check_cursor = requested_start
     missing_hours = []
     while check_cursor < requested_end:
@@ -388,11 +394,11 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     if total_hours <= 0:
         raise HTTPException(status_code=400, detail="Las horas deben ser positivas")
 
-    # Asegurar múltiplos de 1 hora exacta (bloques corridos)
+    # Asegurar múltiplos de 1 hora exacta (Asesoriass corridos)
     if ((end_time - start_time).total_seconds() % 3600) != 0:
-        raise HTTPException(status_code=400, detail="La duración debe ser en múltiplos de 1 hora (bloques corridos)")
+        raise HTTPException(status_code=400, detail="La duración debe ser en múltiplos de 1 hora (Asesoriass corridos)")
 
-    # Calcular precio: primera hora + horas adicionales (descuento de hora extra SOLO dentro del bloque corrido)
+    # Calcular precio: primera hora + horas adicionales (descuento de hora extra SOLO dentro del Asesorias corrido)
     total_price = price.selected_prices + (total_hours - 1) * price.extra_hour_price
     total_amount_cents = int(total_price * 100)  # Convertir a centavos
     
