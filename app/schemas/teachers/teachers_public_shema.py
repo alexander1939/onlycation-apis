@@ -38,6 +38,7 @@ class TeacherSearchResult(BaseModel):
     last_name: str
     educational_level: Optional[str] = None
     expertise_area: Optional[str] = None
+    description: Optional[str] = None
     price_per_hour: Optional[float] = None
     average_rating: Optional[float] = None
     video_embed_url: Optional[str] = None

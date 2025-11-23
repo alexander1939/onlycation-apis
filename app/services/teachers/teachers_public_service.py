@@ -230,3 +230,72 @@ class PublicService:
             "page": page,
             "page_size": page_size
         }
+
+    @staticmethod
+    async def get_public_teacher_profile_by_id(
+        db: AsyncSession,
+        teacher_id: int,
+    ):
+        """
+        Obtiene el perfil público de un docente por ID con campos:
+        user_id, first_name, last_name, educational_level, expertise_area,
+        price_per_hour, average_rating, video_embed_url, video_thumbnail_url.
+        """
+        # Subconsulta para promedio de calificaciones
+        rating_subquery = (
+            select(
+                Availability.user_id,
+                func.coalesce(func.avg(Assessment.qualification), 0).label("avg_rating")
+            )
+            .select_from(Availability)
+            .outerjoin(Booking, Booking.availability_id == Availability.id)
+            .outerjoin(PaymentBooking, PaymentBooking.booking_id == Booking.id)
+            .outerjoin(Assessment, Assessment.payment_booking_id == PaymentBooking.id)
+            .group_by(Availability.user_id)
+            .subquery()
+        )
+
+        query = (
+            select(
+                User.id.label("user_id"),
+                User.first_name,
+                User.last_name,
+                EducationalLevel.name.label("educational_level"),
+                Document.expertise_area,
+                Document.description.label("description"),
+                Price.selected_prices.label("price_per_hour"),
+                rating_subquery.c.avg_rating.label("average_rating"),
+                Video.embed_url.label("video_embed_url"),
+                Video.thumbnail_url.label("video_thumbnail_url"),
+            )
+            .select_from(User)
+            .outerjoin(Profile, Profile.user_id == User.id)
+            .outerjoin(Preference, Preference.user_id == User.id)
+            .outerjoin(EducationalLevel, EducationalLevel.id == Preference.educational_level_id)
+            .outerjoin(Document, Document.user_id == User.id)
+            .outerjoin(Price, Price.user_id == User.id)
+            .outerjoin(Video, Video.user_id == User.id)
+            .outerjoin(rating_subquery, rating_subquery.c.user_id == User.id)
+            .where(User.id == teacher_id)
+            .where(User.role_id == 1)  # Solo docentes
+            .where(User.status_id == 1)  # Solo activos
+            .limit(1)
+        )
+
+        result = await db.execute(query)
+        row = result.first()
+        if not row:
+            return None
+
+        return {
+            "user_id": row.user_id,
+            "first_name": row.first_name,
+            "last_name": row.last_name,
+            "educational_level": row.educational_level,
+            "expertise_area": row.expertise_area,
+            "description": row.description,
+            "price_per_hour": float(row.price_per_hour) if row.price_per_hour is not None else None,
+            "average_rating": round(float(row.average_rating or 0), 2) if row.average_rating is not None else 0.0,
+            "video_embed_url": row.video_embed_url,
+            "video_thumbnail_url": row.video_thumbnail_url,
+        }

@@ -1,6 +1,11 @@
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from datetime import datetime
+
+class BookingSegment(BaseModel):
+    availability_id: int
+    start_time: datetime
+    end_time: datetime
 
 class BookingRequest(BaseModel):
     availability_id: int
@@ -8,6 +13,9 @@ class BookingRequest(BaseModel):
     start_time: datetime
     end_time: datetime
     total_hours: int  
+    # Campos opcionales para compras multi-tramos en una sola sesión
+    availability_ids: Optional[List[int]] = None
+    items: Optional[List[BookingSegment]] = None
 
 class BookingPaymentResponse(BaseModel):
     success: bool

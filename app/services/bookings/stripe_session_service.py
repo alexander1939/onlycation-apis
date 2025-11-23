@@ -2,7 +2,8 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from fastapi import HTTPException
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
 
 from app.models.teachers.availability import Availability
 from app.models.teachers.price import Price
@@ -22,6 +23,203 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     if not disponibilidad:
         raise HTTPException(status_code=404, detail="Disponibilidad no encontrada")
 
+    # Modo MULTI-SEGMENTOS: si el request trae 'items', procesar varios tramos en una sola sesión
+    if getattr(booking_data, "items", None):
+        # 2. Cargar disponibilidades de todos los segmentos y validar mismo docente y preference
+        segment_ids = list({int(i.availability_id) for i in booking_data.items})
+        seg_avails_result = await db.execute(
+            select(Availability)
+            .options(joinedload(Availability.user))
+            .where(Availability.id.in_(segment_ids))
+        )
+        seg_avails = {a.id: a for a in seg_avails_result.scalars().all()}
+        if len(seg_avails) != len(segment_ids):
+            raise HTTPException(status_code=404, detail="Alguna disponibilidad indicada en 'items' no existe")
+
+        base_avail = seg_avails[segment_ids[0]]
+        teacher_id = base_avail.user_id
+        preference_id = base_avail.preference_id
+        for aid in segment_ids:
+            av = seg_avails[aid]
+            if av.user_id != teacher_id or av.preference_id != preference_id:
+                raise HTTPException(status_code=400, detail="Todas las horas deben ser del mismo docente y misma materia/nivel")
+
+        # 3. Parsear y validar segmentos (HH:00, día correcto)
+        segments = []
+        for it in booking_data.items:
+            s = datetime.fromisoformat(it.start_time) if isinstance(it.start_time, str) else it.start_time
+            e = datetime.fromisoformat(it.end_time) if isinstance(it.end_time, str) else it.end_time
+            if (s.minute or s.second or s.microsecond or e.minute or e.second or e.microsecond):
+                raise HTTPException(status_code=400, detail="Los horarios deben ser en horas exactas (ej: 09:00, 10:00)")
+            if e <= s:
+                raise HTTPException(status_code=400, detail="Las horas deben ser positivas y con fin > inicio")
+            segments.append({"availability_id": int(it.availability_id), "start": s, "end": e})
+
+        # Validar día correspondiente por segmento y recolectar días distintos
+        distinct_weekdays = set()
+        for seg in segments:
+            seg_weekday = seg["start"].weekday() + 1
+            # Cada segmento debe mantenerse en el mismo día calendario
+            if (seg["end"].weekday() + 1) != seg_weekday:
+                raise HTTPException(status_code=400, detail="Cada segmento debe estar dentro del mismo día")
+            if seg_avails[seg["availability_id"]].day_of_week != seg_weekday:
+                raise HTTPException(status_code=400, detail="La fecha seleccionada no corresponde al día de la disponibilidad")
+            distinct_weekdays.add(seg_weekday)
+
+        # 4. Validar que cada hora de cada segmento exista como availability activa
+        avail_rows_result = await db.execute(
+            select(Availability).where(
+                Availability.user_id == teacher_id,
+                Availability.preference_id == preference_id,
+                Availability.day_of_week.in_(distinct_weekdays),
+                Availability.is_active == True,
+            )
+        )
+        avail_rows = avail_rows_result.scalars().all()
+        day_avail_map = {}
+        for r in avail_rows:
+            day_avail_map.setdefault(r.day_of_week, set()).add((r.start_time, r.end_time))
+        missing = []
+        for seg in segments:
+            cur = seg["start"]
+            seg_weekday = cur.weekday() + 1
+            day_set = day_avail_map.get(seg_weekday, set())
+            while cur < seg["end"]:
+                nxt = cur + timedelta(hours=1)
+                if (f"{cur.hour:02d}:00:00", f"{nxt.hour:02d}:00:00") not in day_set:
+                    missing.append(f"{cur.strftime('%Y-%m-%d')} {cur.hour:02d}:00-{nxt.hour:02d}:00")
+                cur = nxt
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Las horas seleccionadas no están disponibles: {', '.join(missing)}")
+
+        # 5. Validar traslapes con otras reservas del docente y del alumno
+        from app.models.booking.bookings import Booking
+        from app.models.common.status import Status
+        cancelled_status = (await db.execute(select(Status).where(Status.name == "cancelled"))).scalar_one_or_none()
+        cancelled_id = cancelled_status.id if cancelled_status else None
+        for seg in segments:
+            r_teacher = await db.execute(
+                select(Booking)
+                .join(Availability, Booking.availability_id == Availability.id)
+                .where(
+                    Availability.user_id == teacher_id,
+                    Booking.start_time < seg["end"],
+                    Booking.end_time > seg["start"],
+                    Booking.status_id != cancelled_id if cancelled_id else True,
+                )
+            )
+            if r_teacher.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Ya existe una reserva en alguno de los tramos seleccionados")
+            r_user = await db.execute(
+                select(Booking).where(
+                    Booking.user_id == user.id,
+                    Booking.start_time < seg["end"],
+                    Booking.end_time > seg["start"],
+                    Booking.status_id != cancelled_id if cancelled_id else True,
+                )
+            )
+            if r_user.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Ya tienes una reserva que traslapa con alguno de los tramos seleccionados")
+
+        # 6. Anticipación mínima sobre el primer inicio
+        if ((min(s["start"] for s in segments) - datetime.now()).total_seconds() / 3600) < 1:
+            raise HTTPException(status_code=400, detail="Debes reservar la clase con al menos 1 hora de anticipación")
+
+        # 7. Obtener precio y wallet/commissions
+        price = (await db.execute(select(Price).where(Price.user_id == teacher_id, Price.preference_id == preference_id))).scalar_one_or_none()
+        if not price:
+            raise HTTPException(status_code=404, detail="Precio no encontrado para este docente")
+        commission_rate = await get_teacher_commission_rate(db, teacher_id)
+        teacher_wallet = await get_teacher_wallet(db, teacher_id)
+
+        # 8. Agrupar segmentos en bloques contiguos (hora extra solo dentro del bloque)
+        segments.sort(key=lambda x: x["start"])
+        blocks = []
+        b_s, b_e = segments[0]["start"], segments[0]["end"]
+        for seg in segments[1:]:
+            if seg["start"] == b_e:
+                b_e = seg["end"]
+            else:
+                blocks.append({"start": b_s, "end": b_e})
+                b_s, b_e = seg["start"], seg["end"]
+        blocks.append({"start": b_s, "end": b_e})
+
+        # 9. Calcular precios por bloque y construir line_items
+        line_items = []
+        blocks_meta = []
+        total_amount_cents = 0
+        total_hours_all = 0
+        total_commission_amount = 0
+        total_teacher_amount = 0
+        for idx, blk in enumerate(blocks, 1):
+            hours = int((blk["end"] - blk["start"]).total_seconds() // 3600)
+            if hours <= 0:
+                raise HTTPException(status_code=400, detail="Cada bloque debe tener duración positiva en horas")
+            block_price = float(price.selected_prices) + (hours - 1) * float(price.extra_hour_price)
+            block_amount_cents = int(block_price * 100)
+            c_amt, t_amt = calculate_commission_amounts(block_amount_cents, commission_rate)
+            total_commission_amount += c_amt
+            total_teacher_amount += t_amt
+            total_amount_cents += block_amount_cents
+            total_hours_all += hours
+
+            line_items.append({
+                "price_data": {
+                    "currency": "mxn",
+                    "product_data": {
+                        "name": f"Clase con {base_avail.user.first_name} {base_avail.user.last_name} - Bloque {idx}",
+                        "description": f"Bloque de {hours}h - {blk['start'].strftime('%d/%m/%Y %H:%M')} a {blk['end'].strftime('%d/%m/%Y %H:%M')}",
+                    },
+                    "unit_amount": block_amount_cents,
+                },
+                "quantity": 1,
+            })
+            blocks_meta.append({
+                "start_time": blk["start"].isoformat(),
+                "end_time": blk["end"].isoformat(),
+                "hours": hours,
+                "amount_cents": block_amount_cents,
+            })
+
+        # 10. Crear sesión Stripe con múltiples line_items
+        session_data = {
+            "payment_method_types": ["card"],
+            "line_items": line_items,
+            "mode": "payment",
+            "success_url": "http://localhost:5173/catalog/teachers/?session_id={CHECKOUT_SESSION_ID}",
+            "cancel_url": "http://localhost:5173/",
+            "customer_email": user.email,
+            "metadata": {
+                "booking_mode": "multi",
+                "user_id": str(user.id),
+                "price_id": str(price.id),
+                "availability_id": str(booking_data.availability_id),  # compat
+                "teacher_id": str(teacher_id),
+                "teacher_email": base_avail.user.email,
+                "commission_rate": str(commission_rate),
+                "commission_amount": str(total_commission_amount),
+                "teacher_amount": str(total_teacher_amount),
+                "teacher_stripe_account_id": teacher_wallet.stripe_account_id,
+                "total_hours": str(total_hours_all),
+                "segments": json.dumps([
+                    {"availability_id": seg["availability_id"], "start_time": seg["start"].isoformat(), "end_time": seg["end"].isoformat()} for seg in segments
+                ]),
+                "blocks": json.dumps(blocks_meta),
+            },
+        }
+        if total_commission_amount > 0:
+            session_data["payment_intent_data"] = {
+                "application_fee_amount": total_commission_amount,
+                "transfer_data": {"destination": teacher_wallet.stripe_account_id},
+            }
+        else:
+            session_data["payment_intent_data"] = {
+                "transfer_data": {"destination": teacher_wallet.stripe_account_id},
+            }
+
+        session = stripe.checkout.Session.create(**session_data)
+        return {"url": session.url, "session_id": session.id, "price": total_amount_cents / 100.0}
+
     # 2. Convertir fechas para validaciones
     if isinstance(booking_data.start_time, str):
         requested_start = datetime.fromisoformat(booking_data.start_time)
@@ -32,6 +230,16 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         requested_end = datetime.fromisoformat(booking_data.end_time)
     else:
         requested_end = booking_data.end_time
+
+    # 2.b Validar que los horarios sean en horas exactas (HH:00) para garantizar bloques corridos
+    if (
+        requested_start.minute != 0 or requested_start.second != 0 or requested_start.microsecond != 0 or
+        requested_end.minute != 0 or requested_end.second != 0 or requested_end.microsecond != 0
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Los horarios deben ser en horas exactas (ej: 09:00, 10:00)"
+        )
 
     # 3. Validar que no se puede reservar en fechas pasadas
     current_time = datetime.now()
@@ -47,11 +255,46 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             detail="La hora de fin de la clase no puede ser en el pasado"
         )
 
-    # 4. Validar que el horario solicitado está dentro del rango del docente
-    if not (disponibilidad.start_time <= requested_start < requested_end <= disponibilidad.end_time):
+    # 4. Validar que el día y rango solicitado están dentro de la disponibilidad del docente
+    #    Availability guarda horas como strings HH:MM:SS y un day_of_week (1=Lunes..7=Domingo)
+    python_weekday = requested_start.weekday()  # 0=Lunes
+    if (python_weekday + 1) != disponibilidad.day_of_week:
         raise HTTPException(
             status_code=400,
-            detail="El horario solicitado no está dentro del rango de disponibilidad del docente"
+            detail="La fecha seleccionada no corresponde al día de la disponibilidad"
+        )
+
+    # 4.b La reserva debe estar dentro del mismo día calendario
+    if requested_start.date() != requested_end.date():
+        raise HTTPException(status_code=400, detail="La reserva debe estar dentro del mismo día")
+
+    # 4.c Validar que CADA hora solicitada exista como Availability (per-hour) para el mismo docente/preferencia
+    avail_rows_result = await db.execute(
+        select(Availability).where(
+            Availability.user_id == disponibilidad.user_id,
+            Availability.preference_id == disponibilidad.preference_id,
+            Availability.day_of_week == (python_weekday + 1),
+            Availability.is_active == True,
+        )
+    )
+    avail_rows = avail_rows_result.scalars().all()
+    avail_set = {(row.start_time, row.end_time) for row in avail_rows}
+
+    # Generar los bloques horarios requeridos [start, end) en pasos de 1h
+    check_cursor = requested_start
+    missing_hours = []
+    while check_cursor < requested_end:
+        slot_start_str = f"{check_cursor.hour:02d}:00:00"
+        slot_end = check_cursor + timedelta(hours=1)
+        slot_end_str = f"{slot_end.hour:02d}:00:00"
+        if (slot_start_str, slot_end_str) not in avail_set:
+            missing_hours.append(f"{slot_start_str[:-3]}-{slot_end_str[:-3]}")
+        check_cursor = slot_end
+
+    if missing_hours:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Las horas seleccionadas no están disponibles: {', '.join(missing_hours)}"
         )
 
     # 5. Validar que no hay traslape con otra reserva ya existente en esa disponibilidad
@@ -63,12 +306,15 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     cancelled_status = cancelled_status_result.scalar_one_or_none()
     cancelled_status_id = cancelled_status.id if cancelled_status else None
     
+    # Buscar traslapes en CUALQUIER reserva del mismo docente en esa ventana
     overlap_result = await db.execute(
-        select(Booking).where(
-            Booking.availability_id == booking_data.availability_id,
+        select(Booking)
+        .join(Availability, Booking.availability_id == Availability.id)
+        .where(
+            Availability.user_id == disponibilidad.user_id,
             Booking.start_time < requested_end,
             Booking.end_time > requested_start,
-            Booking.status_id != cancelled_status_id if cancelled_status_id else True
+            Booking.status_id != cancelled_status_id if cancelled_status_id else True,
         )
     )
     existing_booking = overlap_result.scalar_one_or_none()
@@ -142,7 +388,11 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     if total_hours <= 0:
         raise HTTPException(status_code=400, detail="Las horas deben ser positivas")
 
-    # Calcular precio: primera hora + horas adicionales
+    # Asegurar múltiplos de 1 hora exacta (bloques corridos)
+    if ((end_time - start_time).total_seconds() % 3600) != 0:
+        raise HTTPException(status_code=400, detail="La duración debe ser en múltiplos de 1 hora (bloques corridos)")
+
+    # Calcular precio: primera hora + horas adicionales (descuento de hora extra SOLO dentro del bloque corrido)
     total_price = price.selected_prices + (total_hours - 1) * price.extra_hour_price
     total_amount_cents = int(total_price * 100)  # Convertir a centavos
     
@@ -158,7 +408,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
                     "currency": "mxn",
                     "product_data": {
                         "name": f"Clase con {disponibilidad.user.first_name} {disponibilidad.user.last_name}",
-                        "description": f"Clase de {total_hours} hora(s) - {start_time.strftime('%d/%m/%Y %H:%M')} a {end_time.strftime('%d/%m/%Y %H:%M')}",
+                        "description": f"Clase de {int(total_hours)} hora(s) - {start_time.strftime('%d/%m/%Y %H:%M')} a {end_time.strftime('%d/%m/%Y %H:%M')}",
                     },
                     "unit_amount": total_amount_cents,
                 },
@@ -166,7 +416,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             }
         ],
         "mode": "payment",
-        "success_url": "http://localhost:5173/?session_id={CHECKOUT_SESSION_ID}",
+        "success_url": "http://localhost:5173/catalog/teachers/?session_id={CHECKOUT_SESSION_ID}",
         "cancel_url": "http://localhost:5173/",
         "customer_email": user.email,  # Email del estudiante pre-llenado automáticamente
         "metadata": {
