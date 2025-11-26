@@ -22,6 +22,18 @@ class BookingPaymentResponse(BaseModel):
     message: str
     data: Optional[Dict] = None
 
+class BookingQuoteRequest(BaseModel):
+    # Para cotización pública: soporta modo single y multi-segmentos
+    items: Optional[List[BookingSegment]] = None
+    availability_id: Optional[int] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
+class BookingQuoteResponse(BaseModel):
+    success: bool
+    message: str
+    data: Optional[Dict] = None
+
 class VerifyBookingPaymentRequest(BaseModel):
     session_id: str
 
