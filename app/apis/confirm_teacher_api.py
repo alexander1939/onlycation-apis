@@ -8,10 +8,19 @@ import io
 from app.apis.deps import auth_required, get_db
 from app.schemas.teachers.confirm_teacher_schema import (
     ConfirmationCreateResponse,
-    ConfirmationData
+    ConfirmationData,
+    TeacherConfirmationRecentHistoryResponse,
+    TeacherConfirmationAllHistoryResponse,
+    ConfirmationDetailResponse,
 )
 from app.services.teachers.confirm_teacher_service import create_confirmation_by_teacher
 from app.services.teachers.confirm_teacher_service import get_teacher_evidence
+from app.services.teachers.confirm_teacher_service import (
+    list_teacher_confirmations_recent,
+    list_teacher_confirmations_all,
+    get_confirmation_detail,
+    list_teacher_confirmations_by_date,
+)
 
 
 security = HTTPBearer()
@@ -21,7 +30,7 @@ router = APIRouter()
 async def confirm_teacher(
     payment_booking_id: int,
     confirmation: bool = Form(...),
-    description_teacher: str = Form(...),   # 🔹 Nuevo campo obligatorio
+    description_teacher: str = Form(...),   # Nuevo campo obligatorio
     evidence_file: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
@@ -73,3 +82,77 @@ async def get_teacher_evidence_api(
             "Content-Disposition": f"inline; filename={filename}"
         }
     )
+
+
+@router.get(
+    "/teacher/history/recent",
+    response_model=TeacherConfirmationRecentHistoryResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_teacher_recent_confirmations(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Devuelve SOLO confirmaciones confirmables para el docente (clase terminada y ventana abierta),
+    ordenadas por más recientes. La ventana sigue la política vigente del servicio de confirmación del docente.
+    """
+    token = credentials.credentials
+    items = await list_teacher_confirmations_recent(db, token)
+    return {"success": True, "items": items}
+
+
+@router.get(
+    "/teacher/history/all",
+    response_model=TeacherConfirmationAllHistoryResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_teacher_all_confirmations(
+    offset: int = 0,
+    limit: int = 10,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista TODAS las confirmaciones del docente (paginado con offset/limit)."""
+    token = credentials.credentials
+    data = await list_teacher_confirmations_all(db, token, offset=offset, limit=limit)
+    return {
+        "success": True,
+        "offset": data["offset"],
+        "limit": data["limit"],
+        "total": data["total"],
+        "has_more": data["has_more"],
+        "items": data["items"],
+    }
+
+
+@router.get(
+    "/teacher/history/by-date",
+    response_model=TeacherConfirmationRecentHistoryResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_teacher_confirmations_by_date(
+    date: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Filtra confirmaciones del docente por fecha de booking (día completo).
+    Acepta formatos YYYY-MM-DD o DD/MM/YYYY. Usa zona America/Mexico_City para los límites del día.
+    """
+    token = credentials.credentials
+    items = await list_teacher_confirmations_by_date(db, token, date)
+    return {"success": True, "items": items}
+
+
+@router.get(
+    "/detail/{confirmation_id}",
+    response_model=ConfirmationDetailResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_confirmation_detail_api(
+    confirmation_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    token = credentials.credentials
+    data = await get_confirmation_detail(db, token, confirmation_id)
+    return {"success": True, "data": data}

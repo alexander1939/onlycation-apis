@@ -23,12 +23,14 @@ import pytz
 from sqlalchemy.orm import selectinload
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.bookings import Booking
-
+from app.models.booking.assessment import Assessment
+from app.models.teachers.availability import Availability
 import os
 import shutil
 import uuid
 from fastapi import UploadFile
 
+from app.services.utils.pagination_service import PaginationService
 
 EVIDENCE_KEY = config("EVIDENCE_ENCRYPTION_KEY")
 cipher = Fernet(EVIDENCE_KEY.encode())
@@ -109,11 +111,16 @@ async def create_confirmation_by_student(
     cdmx_tz = pytz.timezone("America/Mexico_City")
     booking_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
     booking_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
-    end_window = booking_end + timedelta(minutes=5)
+    end_window = booking_end + timedelta(hours=2)
+
+    # También calcular en hora local CDMX para evitar falsos positivos por tz
+    now_local = datetime.now(cdmx_tz)
+    b_end_local = booking.end_time.astimezone(cdmx_tz) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time)
 
     if now < booking_start:
         raise HTTPException(status_code=400, detail="La clase aún no ha comenzado.")
-    if booking_start <= now < booking_end:
+    # Bloquear si aún no termina (verificación en UTC y en hora local CDMX)
+    if booking_start <= now < booking_end or now_local < b_end_local:
         raise HTTPException(status_code=400, detail="Aún no puedes confirmar. Debes esperar a que termine la clase.")
     if now > end_window:
         raise HTTPException(status_code=400, detail="El tiempo de confirmación expiró.")
@@ -238,3 +245,227 @@ async def get_student_evidence(
         )
 
     return evidence_bytes, filename
+
+
+# ===================== Listados de historial (Alumno) =====================
+async def list_student_confirmations_recent(
+    db: AsyncSession,
+    token: str,
+) -> list[dict]:
+    """Devuelve SOLO confirmaciones confirmables para el alumno (ventana abierta de 2 horas
+    después del fin de la clase), ordenadas por más recientes (fin de clase desc).
+    """
+    student_id = await get_student_id_from_token(token)
+
+    # Traer pendientes del alumno, ordenadas por fin de clase (desc) y filtrar por ventana en código
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(Confirmation, PaymentBooking, Booking)
+        .join(PaymentBooking, PaymentBooking.id == Confirmation.payment_booking_id)
+        .join(Booking, Booking.id == PaymentBooking.booking_id)
+        .where(Confirmation.student_id == student_id)
+        .where(Confirmation.confirmation_date_student.is_(None))
+        .order_by(Booking.end_time.desc())
+    )
+    rows = result.all()
+
+    cdmx_tz = pytz.timezone("America/Mexico_City")
+    items: list[dict] = []
+    # Prefetch: teachers that this student has already assessed (any booking)
+    res_ass = await db.execute(
+        select(Availability.user_id)
+        .join(Booking, Booking.availability_id == Availability.id)
+        .join(PaymentBooking, PaymentBooking.booking_id == Booking.id)
+        .join(Assessment, Assessment.payment_booking_id == PaymentBooking.id)
+        .where(Assessment.user_id == student_id)
+        .distinct()
+    )
+    assessed_teachers = {tid for (tid,) in res_ass.all()}
+    for conf, pb, booking in rows:
+        b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
+        b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
+        end_window = b_end + timedelta(hours=2)
+
+        if now < b_end:
+            continue
+        # Romper en cuanto la ventana expire (por orden desc, el resto también estará expirado)
+        if now > end_window:
+            break
+        seconds_left = max(int((end_window - now).total_seconds()), 0)
+        window_status = "open"
+        confirmable_now = True
+
+        items.append({
+            "id": conf.id,
+            "teacher_id": conf.teacher_id,
+            "student_id": conf.student_id,
+            "payment_booking_id": conf.payment_booking_id,
+            "payment_created_at": pb.created_at,
+            "booking_start": b_start,
+            "booking_end": b_end,
+            "confirmed_by_student": conf.confirmation_date_student,
+            "confirmed_by_teacher": conf.confirmation_date_teacher,
+            "window_status": window_status,
+            "confirmable_now": confirmable_now,
+            "seconds_left": seconds_left,
+            "has_assessment_by_student": (conf.teacher_id in assessed_teachers),
+        })
+
+    return items
+
+
+async def list_student_confirmations_all(
+    db: AsyncSession,
+    token: str,
+    offset: int = 0,
+    limit: int = 10,
+) -> dict:
+    """Lista TODAS las confirmaciones del alumno con paginación usando PaginationService
+    (offset/limit). Enriquecemos cada item con tiempos de booking y estado de ventana (2h).
+    """
+    student_id = await get_student_id_from_token(token)
+
+    page_data = await PaginationService.get_paginated_data(
+        db=db,
+        model=Confirmation,
+        offset=offset,
+        limit=limit,
+        filters={"student_id": student_id},
+    )
+
+    confirmations: list[Confirmation] = page_data["items"]
+    if not confirmations:
+        return {
+            "items": [],
+            "total": page_data["total"],
+            "offset": offset,
+            "limit": limit,
+            "has_more": page_data["has_more"],
+        }
+
+    # Enriquecer con bookings
+    payment_ids = [c.payment_booking_id for c in confirmations]
+    result = await db.execute(
+        select(PaymentBooking, Booking)
+        .join(Booking, Booking.id == PaymentBooking.booking_id)
+        .where(PaymentBooking.id.in_(payment_ids))
+    )
+    rows = result.all()
+    pb_to_booking = {pb.id: bk for pb, bk in rows}
+    pb_lookup = {pb.id: pb for pb, _ in rows}
+
+    now = datetime.now(timezone.utc)
+    cdmx_tz = pytz.timezone("America/Mexico_City")
+    items: list[dict] = []
+    for conf in confirmations:
+        booking = pb_to_booking.get(conf.payment_booking_id)
+        if not booking:
+            continue
+        b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
+        b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
+        end_window = b_end + timedelta(hours=2)
+        window_open = now <= end_window
+        confirmable_now = (now >= b_end) and window_open
+        seconds_left = max(int((end_window - now).total_seconds()), 0) if window_open else 0
+        window_status = "open" if window_open else "expired"
+
+        items.append({
+            "id": conf.id,
+            "teacher_id": conf.teacher_id,
+            "student_id": conf.student_id,
+            "payment_booking_id": conf.payment_booking_id,
+            "payment_created_at": pb_lookup.get(conf.payment_booking_id).created_at if pb_lookup.get(conf.payment_booking_id) else None,
+            "booking_start": b_start,
+            "booking_end": b_end,
+            "confirmed_by_student": conf.confirmation_date_student,
+            "confirmed_by_teacher": conf.confirmation_date_teacher,
+            "window_status": window_status,
+            "confirmable_now": confirmable_now,
+            "seconds_left": seconds_left,
+        })
+
+    # Ordenar por creación de PaymentBooking desc (más recientes primero)
+    items.sort(key=lambda x: (x["payment_created_at"] or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+
+    return {
+        "items": items,
+        "total": page_data["total"],
+        "offset": offset,
+        "limit": limit,
+        "has_more": page_data["has_more"],
+    }
+
+
+# ====== Utilitario de fecha (local) ======
+def _parse_date_str(date_str: str) -> datetime:
+    """Parsea fecha en formatos YYYY-MM-DD o DD/MM/YYYY (y YYYY/MM/DD)."""
+    from datetime import datetime as dt
+    fmts = ["%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d"]
+    last_err = None
+    for f in fmts:
+        try:
+            return dt.strptime(date_str, f)
+        except Exception as e:
+            last_err = e
+    raise HTTPException(status_code=400, detail=f"Formato de fecha inválido: {date_str}. Usa YYYY-MM-DD o DD/MM/YYYY.")
+
+
+# ===================== Filtrado por fecha (Alumno) =====================
+async def list_student_confirmations_by_date(
+    db: AsyncSession,
+    token: str,
+    date: str,
+) -> list[dict]:
+    """Lista confirmaciones del alumno filtradas por la FECHA del booking (día completo).
+    La fecha se interpreta en zona America/Mexico_City. Campos opcionales toleran NULLs.
+    """
+    student_id = await get_student_id_from_token(token)
+
+    # Calcular rango de día [start_local, next_day_local) en MX y convertir a UTC
+    base = _parse_date_str(date)
+    cdmx_tz = pytz.timezone("America/Mexico_City")
+    start_local = cdmx_tz.localize(datetime(base.year, base.month, base.day, 0, 0, 0))
+    next_local = start_local + timedelta(days=1)
+    start_utc = start_local.astimezone(timezone.utc)
+    next_utc = next_local.astimezone(timezone.utc)
+
+    # Traer confirmaciones asociadas a bookings cuyo start_time caiga en ese día local
+    result = await db.execute(
+        select(Confirmation, PaymentBooking, Booking)
+        .join(PaymentBooking, PaymentBooking.id == Confirmation.payment_booking_id)
+        .join(Booking, Booking.id == PaymentBooking.booking_id)
+        .where(Confirmation.student_id == student_id)
+        .where(Booking.start_time >= start_utc)
+        .where(Booking.start_time < next_utc)
+        .order_by(Booking.end_time.desc())
+    )
+    rows = result.all()
+
+    now = datetime.now(timezone.utc)
+    items: list[dict] = []
+    for conf, pb, booking in rows:
+        b_start = booking.start_time.astimezone(timezone.utc)
+        b_end = booking.end_time.astimezone(timezone.utc)
+
+        end_window = b_end + timedelta(hours=2)
+        window_open = now <= end_window
+        confirmable_now = (now >= b_end) and window_open
+        seconds_left = max(int((end_window - now).total_seconds()), 0) if window_open else 0
+        window_status = "open" if window_open else "expired"
+
+        items.append({
+            "id": conf.id,
+            "teacher_id": conf.teacher_id,
+            "student_id": conf.student_id,
+            "payment_booking_id": conf.payment_booking_id,
+            "payment_created_at": pb.created_at if pb else None,
+            "booking_start": b_start,
+            "booking_end": b_end,
+            "confirmed_by_student": conf.confirmation_date_student,
+            "confirmed_by_teacher": conf.confirmation_date_teacher,
+            "window_status": window_status,
+            "confirmable_now": confirmable_now,
+            "seconds_left": seconds_left,
+        })
+
+    return items

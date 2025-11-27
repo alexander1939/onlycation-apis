@@ -151,12 +151,15 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         total_hours_all = 0
         total_commission_amount = 0
         total_teacher_amount = 0
+        # Política por bloque: primeras 2 horas de CADA Asesoría a precio base; desde la 3ra hora del bloque, precio extra
+        base_cents = int(float(price.selected_prices) * 100)
+        extra_cents = int(float(price.extra_hour_price) * 100)
         for idx, blk in enumerate(blocks, 1):
             hours = int((blk["end"] - blk["start"]).total_seconds() // 3600)
             if hours <= 0:
                 raise HTTPException(status_code=400, detail="Cada Asesorias debe tener duración positiva en horas")
-            block_price = float(price.selected_prices) + (hours - 1) * float(price.extra_hour_price)
-            block_amount_cents = int(block_price * 100)
+            # Calcular monto del bloque: 2 primeras horas base, resto extra (por bloque)
+            block_amount_cents = base_cents * min(hours, 2) + extra_cents * max(0, hours - 2)
             c_amt, t_amt = calculate_commission_amounts(block_amount_cents, commission_rate)
             total_commission_amount += c_amt
             total_teacher_amount += t_amt
@@ -211,6 +214,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
                 "total_hours": str(total_hours_all),
                 # Solo enviamos Asesoriass con claves cortas para no exceder el límite de 500 chars por valor
                 "blocks": json.dumps(blocks_meta, separators=(",", ":")),
+                "global_pricing_policy": "Por asesoría. Las primeras 2 horas a precio normal; desde la 3ra hora de la misma asesoría, el costo es a mitad de precio.",
             },
         }
         if total_commission_amount > 0:
@@ -398,9 +402,11 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     if ((end_time - start_time).total_seconds() % 3600) != 0:
         raise HTTPException(status_code=400, detail="La duración debe ser en múltiplos de 1 hora (Asesoriass corridos)")
 
-    # Calcular precio: primera hora + horas adicionales (descuento de hora extra SOLO dentro del Asesorias corrido)
-    total_price = price.selected_prices + (total_hours - 1) * price.extra_hour_price
-    total_amount_cents = int(total_price * 100)  # Convertir a centavos
+    # Calcular precio global (single): primeras 2 horas base, desde 3ra hora extra
+    hours_n = int(total_hours)
+    base_cents = int(float(price.selected_prices) * 100)
+    extra_cents = int(float(price.extra_hour_price) * 100)
+    total_amount_cents = base_cents * min(hours_n, 2) + extra_cents * max(0, hours_n - 2)
     
     # Calcular comisiones
     commission_amount, teacher_amount = calculate_commission_amounts(total_amount_cents, commission_rate)
@@ -437,7 +443,8 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             "commission_rate": str(commission_rate),
             "commission_amount": str(commission_amount),
             "teacher_amount": str(teacher_amount),
-            "teacher_stripe_account_id": teacher_wallet.stripe_account_id
+            "teacher_stripe_account_id": teacher_wallet.stripe_account_id,
+            "global_pricing_policy": "Por asesoría. Las primeras 2 horas a precio normal; desde la 3ra hora de la misma asesoría, el costo es a mitad de precio.",
         }
     }
     
@@ -465,5 +472,226 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     return {
         "url": session.url,
         "session_id": session.id,
-        "price": price.selected_prices + (total_hours - 1) * price.extra_hour_price
+        "price": total_amount_cents / 100.0
+    }
+
+async def calculate_booking_quote(db: AsyncSession, request):
+    """
+    Calcula cotización pública sin requerir autenticación ni crear sesión Stripe.
+    Soporta modo multi-segmentos (request.items) y modo single (availability_id + rango).
+    Aplica política global de precios: primeras 2 horas a precio base, desde 3ra hora a precio de hora extra.
+    Devuelve desglose por bloques contiguos y totales.
+    """
+    from app.models.teachers.availability import Availability
+    from app.models.teachers.price import Price
+
+    # MULTI-SEGMENTOS
+    if getattr(request, "items", None):
+        # 1) Cargar disponibilidades y validar mismo docente y materia
+        segment_ids = list({int(i.availability_id) for i in request.items})
+        seg_avails_result = await db.execute(
+            select(Availability).options(joinedload(Availability.user)).where(Availability.id.in_(segment_ids))
+        )
+        seg_avails = {a.id: a for a in seg_avails_result.scalars().all()}
+        if len(seg_avails) != len(segment_ids):
+            raise HTTPException(status_code=404, detail="Alguna disponibilidad indicada en 'items' no existe")
+
+        base_avail = seg_avails[segment_ids[0]]
+        teacher_id = base_avail.user_id
+        preference_id = base_avail.preference_id
+        for aid in segment_ids:
+            av = seg_avails[aid]
+            if av.user_id != teacher_id or av.preference_id != preference_id:
+                raise HTTPException(status_code=400, detail="Todas las horas deben ser del mismo docente y misma materia/nivel")
+
+        # 2) Parsear segmentos y validar HH:00, día correcto y que cada segmento no cruce de día
+        segments = []
+        for it in request.items:
+            s = it.start_time if not isinstance(it.start_time, str) else datetime.fromisoformat(it.start_time)
+            e = it.end_time if not isinstance(it.end_time, str) else datetime.fromisoformat(it.end_time)
+            if (s.minute or s.second or s.microsecond or e.minute or e.second or e.microsecond):
+                raise HTTPException(status_code=400, detail="Los horarios deben ser en horas exactas (ej: 09:00, 10:00)")
+            if e <= s:
+                raise HTTPException(status_code=400, detail="Las horas deben ser positivas y con fin > inicio")
+            segments.append({"availability_id": int(it.availability_id), "start": s, "end": e})
+
+        # Día correcto por segmento y mapa de días distintos
+        distinct_weekdays = set()
+        for seg in segments:
+            seg_weekday = seg["start"].weekday() + 1
+            if (seg["end"].weekday() + 1) != seg_weekday:
+                raise HTTPException(status_code=400, detail="Cada segmento debe estar dentro del mismo día")
+            if seg_avails[seg["availability_id"]].day_of_week != seg_weekday:
+                raise HTTPException(status_code=400, detail="La fecha seleccionada no corresponde al día de la disponibilidad")
+            distinct_weekdays.add(seg_weekday)
+
+        # 3) Validar que CADA hora exista como availability activa por día
+        avail_rows_result = await db.execute(
+            select(Availability).where(
+                Availability.user_id == teacher_id,
+                Availability.preference_id == preference_id,
+                Availability.day_of_week.in_(distinct_weekdays),
+                Availability.is_active == True,
+            )
+        )
+        avail_rows = avail_rows_result.scalars().all()
+        day_avail_map = {}
+        for r in avail_rows:
+            day_avail_map.setdefault(r.day_of_week, set()).add((r.start_time, r.end_time))
+        missing = []
+        for seg in segments:
+            cur = seg["start"]
+            seg_weekday = cur.weekday() + 1
+            day_set = day_avail_map.get(seg_weekday, set())
+            while cur < seg["end"]:
+                nxt = cur + timedelta(hours=1)
+                if (f"{cur.hour:02d}:00:00", f"{nxt.hour:02d}:00:00") not in day_set:
+                    missing.append(f"{cur.strftime('%Y-%m-%d')} {cur.hour:02d}:00-{nxt.hour:02d}:00")
+                cur = nxt
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Las horas seleccionadas no están disponibles: {', '.join(missing)}")
+
+        # 4) Precio y comisión
+        price = (await db.execute(select(Price).where(Price.user_id == teacher_id, Price.preference_id == preference_id))).scalar_one_or_none()
+        if not price:
+            raise HTTPException(status_code=404, detail="Precio no encontrado para este docente")
+        commission_rate = await get_teacher_commission_rate(db, teacher_id)
+
+        # 5) Agrupar en bloques contiguos
+        segments.sort(key=lambda x: x["start"])
+        blocks = []
+        b_s, b_e = segments[0]["start"], segments[0]["end"]
+        for seg in segments[1:]:
+            if seg["start"] == b_e:
+                b_e = seg["end"]
+            else:
+                blocks.append({"start": b_s, "end": b_e})
+                b_s, b_e = seg["start"], seg["end"]
+        blocks.append({"start": b_s, "end": b_e})
+
+        # 6) Aplicar política por bloque: en CADA bloque, primeras 2 h base; desde la 3ra hora del bloque, extra
+        base_cents = int(float(price.selected_prices) * 100)
+        extra_cents = int(float(price.extra_hour_price) * 100)
+
+        breakdown = []
+        total_amount_cents = 0
+        total_hours_all = 0
+
+        for blk in blocks:
+            hours = int((blk["end"] - blk["start"]).total_seconds() // 3600)
+            if hours <= 0:
+                raise HTTPException(status_code=400, detail="Cada bloque debe tener duración positiva en horas")
+            block_amount_cents = base_cents * min(hours, 2) + extra_cents * max(0, hours - 2)
+
+            # availability_id del bloque: el segmento que inicia el bloque
+            try:
+                availability_id_for_block = next(seg["availability_id"] for seg in segments if seg["start"] == blk["start"])  # type: ignore
+            except StopIteration:
+                availability_id_for_block = segments[0]["availability_id"] if segments else base_avail.id
+
+            breakdown.append({
+                "start": blk["start"].isoformat(),
+                "end": blk["end"].isoformat(),
+                "hours": hours,
+                "amount_cents": block_amount_cents,
+                "availability_id": int(availability_id_for_block),
+            })
+            total_amount_cents += block_amount_cents
+            total_hours_all += hours
+
+        commission_amount, teacher_amount = calculate_commission_amounts(total_amount_cents, commission_rate)
+
+        return {
+            "mode": "multi",
+            "teacher_id": teacher_id,
+            "preference_id": preference_id,
+            "price_id": price.id,
+            "base_hour_price_mxn": float(price.selected_prices),
+            "extra_hour_price_mxn": float(price.extra_hour_price),
+            "global_pricing_policy": "Por asesoría. Las primeras 2 horas a precio normal; desde la 3ra hora de la misma asesoría, el costo es a mitad de precio.",
+            "total_hours": total_hours_all,
+            "total_amount_cents": total_amount_cents,
+            "total_amount_mxn": total_amount_cents / 100.0,
+            "commission_rate": commission_rate,
+            "commission_amount_cents": commission_amount,
+            "teacher_amount_cents": teacher_amount,
+            "blocks": breakdown,
+        }
+
+    # SINGLE MODE
+    # 1) Cargar disponibilidad
+    if not request.availability_id or not request.start_time or not request.end_time:
+        raise HTTPException(status_code=400, detail="Se requieren availability_id, start_time y end_time para cotización single")
+    disponibilidad = (await db.execute(
+        select(Availability).options(joinedload(Availability.user)).where(Availability.id == int(request.availability_id))
+    )).scalar_one_or_none()
+    if not disponibilidad:
+        raise HTTPException(status_code=404, detail="Disponibilidad no encontrada")
+
+    # 2) Fechas y validaciones
+    s = request.start_time if not isinstance(request.start_time, str) else datetime.fromisoformat(request.start_time)
+    e = request.end_time if not isinstance(request.end_time, str) else datetime.fromisoformat(request.end_time)
+    if (s.minute or s.second or s.microsecond or e.minute or e.second or e.microsecond):
+        raise HTTPException(status_code=400, detail="Los horarios deben ser en horas exactas (ej: 09:00, 10:00)")
+    if e <= s:
+        raise HTTPException(status_code=400, detail="Las horas deben ser positivas y con fin > inicio")
+    if s.date() != e.date():
+        raise HTTPException(status_code=400, detail="La reserva debe estar dentro del mismo día")
+    if (s.weekday() + 1) != disponibilidad.day_of_week:
+        raise HTTPException(status_code=400, detail="La fecha seleccionada no corresponde al día de la disponibilidad")
+
+    avail_rows_result = await db.execute(
+        select(Availability).where(
+            Availability.user_id == disponibilidad.user_id,
+            Availability.preference_id == disponibilidad.preference_id,
+            Availability.day_of_week == (s.weekday() + 1),
+            Availability.is_active == True,
+        )
+    )
+    avail_rows = avail_rows_result.scalars().all()
+    avail_set = {(row.start_time, row.end_time) for row in avail_rows}
+    cur = s
+    missing_hours = []
+    while cur < e:
+        nxt = cur + timedelta(hours=1)
+        if (f"{cur.hour:02d}:00:00", f"{nxt.hour:02d}:00:00") not in avail_set:
+            missing_hours.append(f"{cur.strftime('%Y-%m-%d')} {cur.hour:02d}:00-{nxt.hour:02d}:00")
+        cur = nxt
+    if missing_hours:
+        raise HTTPException(status_code=400, detail=f"Las horas seleccionadas no están disponibles: {', '.join(missing_hours)}")
+
+    # 3) Precio y comisión
+    price = (await db.execute(select(Price).where(Price.user_id == disponibilidad.user_id, Price.preference_id == disponibilidad.preference_id))).scalar_one_or_none()
+    if not price:
+        raise HTTPException(status_code=404, detail="Precio no encontrado para este docente")
+    commission_rate = await get_teacher_commission_rate(db, disponibilidad.user_id)
+
+    # 4) Política global: primeras 2 h base en toda la reserva (single)
+    hours_n = int((e - s).total_seconds() // 3600)
+    base_cents = int(float(price.selected_prices) * 100)
+    extra_cents = int(float(price.extra_hour_price) * 100)
+    total_amount_cents = base_cents * min(hours_n, 2) + extra_cents * max(0, hours_n - 2)
+    commission_amount, teacher_amount = calculate_commission_amounts(total_amount_cents, commission_rate)
+
+    return {
+        "mode": "single",
+        "teacher_id": disponibilidad.user_id,
+        "preference_id": disponibilidad.preference_id,
+        "price_id": (await db.execute(select(Price.id).where(Price.user_id == disponibilidad.user_id, Price.preference_id == disponibilidad.preference_id))).scalar_one(),
+        "base_hour_price_mxn": float(price.selected_prices),
+        "extra_hour_price_mxn": float(price.extra_hour_price),
+        "global_pricing_policy": "Por asesoría. Las primeras 2 horas a precio normal; desde la 3ra hora de la misma asesoría, el costo es a mitad de precio.",
+        "total_hours": hours_n,
+        "total_amount_cents": total_amount_cents,
+        "total_amount_mxn": total_amount_cents / 100.0,
+        "commission_rate": commission_rate,
+        "commission_amount_cents": commission_amount,
+        "teacher_amount_cents": teacher_amount,
+        "blocks": [{
+            "start": s.isoformat(),
+            "end": e.isoformat(),
+            "hours": hours_n,
+            "amount_cents": total_amount_cents,
+            "availability_id": int(request.availability_id),
+        }],
     }
