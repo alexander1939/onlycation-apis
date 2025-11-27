@@ -134,7 +134,7 @@ async def create_confirmation_by_teacher(
     cdmx_tz = pytz.timezone("America/Mexico_City")
     booking_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
     booking_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
-    end_window = booking_end + timedelta(hours=4)
+    end_window = booking_end + timedelta(hours=2)
 
     if now < booking_start:
         raise HTTPException(status_code=400, detail="La clase aún no ha comenzado.")
@@ -365,7 +365,7 @@ async def list_teacher_confirmations_all(
         if booking:
             b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
             b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
-            end_window = b_end + timedelta(hours=4)
+            end_window = b_end + timedelta(hours=2)
             window_open = now <= end_window
             confirmable_now = (now >= b_end) and window_open
             seconds_left = max(int((end_window - now).total_seconds()), 0) if window_open else 0

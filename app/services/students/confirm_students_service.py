@@ -110,7 +110,7 @@ async def create_confirmation_by_student(
     cdmx_tz = pytz.timezone("America/Mexico_City")
     booking_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
     booking_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
-    end_window = booking_end + timedelta(minutes=5)
+    end_window = booking_end + timedelta(hours=2)
 
     if now < booking_start:
         raise HTTPException(status_code=400, detail="La clase aún no ha comenzado.")
@@ -278,7 +278,7 @@ async def list_student_confirmations_recent(
         b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
         b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
         end_window = b_end + timedelta(hours=2)
-        # Saltar clases que aún no terminan
+
         if now < b_end:
             continue
         # Romper en cuanto la ventana expire (por orden desc, el resto también estará expirado)
