@@ -113,9 +113,14 @@ async def create_confirmation_by_student(
     booking_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
     end_window = booking_end + timedelta(hours=2)
 
+    # También calcular en hora local CDMX para evitar falsos positivos por tz
+    now_local = datetime.now(cdmx_tz)
+    b_end_local = booking.end_time.astimezone(cdmx_tz) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time)
+
     if now < booking_start:
         raise HTTPException(status_code=400, detail="La clase aún no ha comenzado.")
-    if booking_start <= now < booking_end:
+    # Bloquear si aún no termina (verificación en UTC y en hora local CDMX)
+    if booking_start <= now < booking_end or now_local < b_end_local:
         raise HTTPException(status_code=400, detail="Aún no puedes confirmar. Debes esperar a que termine la clase.")
     if now > end_window:
         raise HTTPException(status_code=400, detail="El tiempo de confirmación expiró.")
