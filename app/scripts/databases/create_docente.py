@@ -526,15 +526,11 @@ async def crear_docente():
             db.add(pay)
             await db.flush()
             
-            # Crear Confirmation
+            # Crear Confirmation (stub)
             conf = Confirmation(
                 teacher_id=docente.id,
                 student_id=alumno.id,
                 payment_booking_id=pay.id,
-                confirmation_date_teacher=False,
-                confirmation_date_student=False,
-                description_teacher=f"Clase de matemáticas #{i}",
-                description_student=f"Lista para clase #{i}"
             )
             db.add(conf)
             
@@ -675,10 +671,6 @@ async def crear_docente():
                 teacher_id=docente.id,
                 student_id=alumno.id,
                 payment_booking_id=pay.id,
-                confirmation_date_teacher=False,
-                confirmation_date_student=False,
-                description_teacher="Clase programada",
-                description_student="Listo para la clase",
             )
             db.add(conf)
             print("Confirmation de prueba creada.")
@@ -754,15 +746,11 @@ async def crear_docente():
             db.add(future_pay)
             await db.flush()
 
-            # Confirmation
+            # Confirmation (stub)
             future_conf = Confirmation(
                 teacher_id=docente.id,
                 student_id=alumno.id,
                 payment_booking_id=future_pay.id,
-                confirmation_date_teacher=False,
-                confirmation_date_student=False,
-                description_teacher="Clase programada (futura)",
-                description_student="Lista para clase futura",
             )
             db.add(future_conf)
 
@@ -832,15 +820,11 @@ async def crear_docente():
         db.add(recent_pay)
         await db.flush()
 
-        # Confirmation del booking reciente (sin assessment al ser muy reciente)
+        # Confirmation del booking reciente (stub)
         recent_conf = Confirmation(
             teacher_id=docente.id,
             student_id=alumno.id,
             payment_booking_id=recent_pay.id,
-            confirmation_date_teacher=False,
-            confirmation_date_student=False,
-            description_teacher="Clase finalizada recientemente",
-            description_student="Clase finalizada (reciente)",
         )
         db.add(recent_conf)
 
@@ -903,10 +887,6 @@ async def crear_docente():
             teacher_id=docente.id,
             student_id=alumno.id,
             payment_booking_id=one_pay.id,
-            confirmation_date_teacher=False,
-            confirmation_date_student=False,
-            description_teacher="Clase finalizada (~1h)",
-            description_student="Clase finalizada (~1h)",
         )
         db.add(one_conf)
 
@@ -969,10 +949,6 @@ async def crear_docente():
             teacher_id=docente.id,
             student_id=alumno.id,
             payment_booking_id=gt2_pay.id,
-            confirmation_date_teacher=False,
-            confirmation_date_student=False,
-            description_teacher=">2h desde fin",
-            description_student=">2h desde fin",
         )
         db.add(gt2_conf)
 

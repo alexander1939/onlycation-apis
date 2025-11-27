@@ -29,6 +29,7 @@ import shutil
 import uuid
 from fastapi import UploadFile
 
+from app.services.utils.pagination_service import PaginationService
 
 EVIDENCE_KEY = config("EVIDENCE_ENCRYPTION_KEY")
 cipher = Fernet(EVIDENCE_KEY.encode())
@@ -238,3 +239,137 @@ async def get_student_evidence(
         )
 
     return evidence_bytes, filename
+
+
+# ===================== Listados de historial (Alumno) =====================
+async def list_student_confirmations_recent(
+    db: AsyncSession,
+    token: str,
+) -> list[dict]:
+    """Devuelve SOLO confirmaciones confirmables para el alumno (ventana abierta de 2 horas
+    después del fin de la clase), ordenadas por más recientes (fin de clase desc).
+    """
+    student_id = await get_student_id_from_token(token)
+
+    result = await db.execute(
+        select(Confirmation, PaymentBooking, Booking)
+        .join(PaymentBooking, PaymentBooking.id == Confirmation.payment_booking_id)
+        .join(Booking, Booking.id == PaymentBooking.booking_id)
+        .where(Confirmation.student_id == student_id)
+        .where(Confirmation.confirmation_date_student.is_(None))
+        .order_by(Booking.end_time.desc())
+    )
+    rows = result.all()
+
+    now = datetime.now(timezone.utc)
+    cdmx_tz = pytz.timezone("America/Mexico_City")
+    items: list[dict] = []
+    for conf, pb, booking in rows:
+        b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
+        b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
+        end_window = b_end + timedelta(hours=2)
+        window_open = now <= end_window
+        confirmable_now = (now >= b_end) and window_open
+        if not confirmable_now:
+            continue
+        seconds_left = max(int((end_window - now).total_seconds()), 0)
+        window_status = "open"
+
+        items.append({
+            "id": conf.id,
+            "teacher_id": conf.teacher_id,
+            "student_id": conf.student_id,
+            "payment_booking_id": conf.payment_booking_id,
+            "payment_created_at": pb.created_at,
+            "booking_start": b_start,
+            "booking_end": b_end,
+            "confirmed_by_student": conf.confirmation_date_student,
+            "confirmed_by_teacher": conf.confirmation_date_teacher,
+            "window_status": window_status,
+            "confirmable_now": True,
+            "seconds_left": seconds_left,
+        })
+
+    return items
+
+
+async def list_student_confirmations_all(
+    db: AsyncSession,
+    token: str,
+    offset: int = 0,
+    limit: int = 10,
+) -> dict:
+    """Lista TODAS las confirmaciones del alumno con paginación usando PaginationService
+    (offset/limit). Enriquecemos cada item con tiempos de booking y estado de ventana (2h).
+    """
+    student_id = await get_student_id_from_token(token)
+
+    page_data = await PaginationService.get_paginated_data(
+        db=db,
+        model=Confirmation,
+        offset=offset,
+        limit=limit,
+        filters={"student_id": student_id},
+    )
+
+    confirmations: list[Confirmation] = page_data["items"]
+    if not confirmations:
+        return {
+            "items": [],
+            "total": page_data["total"],
+            "offset": offset,
+            "limit": limit,
+            "has_more": page_data["has_more"],
+        }
+
+    # Enriquecer con bookings
+    payment_ids = [c.payment_booking_id for c in confirmations]
+    result = await db.execute(
+        select(PaymentBooking, Booking)
+        .join(Booking, Booking.id == PaymentBooking.booking_id)
+        .where(PaymentBooking.id.in_(payment_ids))
+    )
+    rows = result.all()
+    pb_to_booking = {pb.id: bk for pb, bk in rows}
+    pb_lookup = {pb.id: pb for pb, _ in rows}
+
+    now = datetime.now(timezone.utc)
+    cdmx_tz = pytz.timezone("America/Mexico_City")
+    items: list[dict] = []
+    for conf in confirmations:
+        booking = pb_to_booking.get(conf.payment_booking_id)
+        if not booking:
+            continue
+        b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
+        b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
+        end_window = b_end + timedelta(hours=2)
+        window_open = now <= end_window
+        confirmable_now = (now >= b_end) and window_open
+        seconds_left = max(int((end_window - now).total_seconds()), 0) if window_open else 0
+        window_status = "open" if window_open else "expired"
+
+        items.append({
+            "id": conf.id,
+            "teacher_id": conf.teacher_id,
+            "student_id": conf.student_id,
+            "payment_booking_id": conf.payment_booking_id,
+            "payment_created_at": pb_lookup.get(conf.payment_booking_id).created_at if pb_lookup.get(conf.payment_booking_id) else None,
+            "booking_start": b_start,
+            "booking_end": b_end,
+            "confirmed_by_student": conf.confirmation_date_student,
+            "confirmed_by_teacher": conf.confirmation_date_teacher,
+            "window_status": window_status,
+            "confirmable_now": confirmable_now,
+            "seconds_left": seconds_left,
+        })
+
+    # Ordenar por creación de PaymentBooking desc (más recientes primero)
+    items.sort(key=lambda x: (x["payment_created_at"] or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+
+    return {
+        "items": items,
+        "total": page_data["total"],
+        "offset": offset,
+        "limit": limit,
+        "has_more": page_data["has_more"],
+    }
