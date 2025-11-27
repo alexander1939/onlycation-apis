@@ -22,6 +22,7 @@ from app.services.students.confirm_students_service import get_student_evidence
 from app.services.students.confirm_students_service import (
     list_student_confirmations_recent,
     list_student_confirmations_all,
+    list_student_confirmations_by_date,
 )
 from app.cores.file_validator import FileValidator
 
@@ -128,3 +129,21 @@ async def get_student_all_confirmations(
         "has_more": data["has_more"],
         "items": data["items"],
     }
+
+
+@router.get(
+    "/student/history/by-date",
+    response_model=StudentConfirmationRecentHistoryResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_student_confirmations_by_date(
+    date: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Filtra confirmaciones del alumno por fecha de booking (día completo).
+    Acepta formatos YYYY-MM-DD o DD/MM/YYYY. Usa zona America/Mexico_City para los límites del día.
+    """
+    token = credentials.credentials
+    items = await list_student_confirmations_by_date(db, token, date)
+    return {"success": True, "items": items}

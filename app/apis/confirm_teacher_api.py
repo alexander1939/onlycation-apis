@@ -19,6 +19,7 @@ from app.services.teachers.confirm_teacher_service import (
     list_teacher_confirmations_recent,
     list_teacher_confirmations_all,
     get_confirmation_detail,
+    list_teacher_confirmations_by_date,
 )
 
 
@@ -122,6 +123,24 @@ async def get_teacher_all_confirmations(
         "has_more": data["has_more"],
         "items": data["items"],
     }
+
+
+@router.get(
+    "/teacher/history/by-date",
+    response_model=TeacherConfirmationRecentHistoryResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_teacher_confirmations_by_date(
+    date: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Filtra confirmaciones del docente por fecha de booking (día completo).
+    Acepta formatos YYYY-MM-DD o DD/MM/YYYY. Usa zona America/Mexico_City para los límites del día.
+    """
+    token = credentials.credentials
+    items = await list_teacher_confirmations_by_date(db, token, date)
+    return {"success": True, "items": items}
 
 
 @router.get(
