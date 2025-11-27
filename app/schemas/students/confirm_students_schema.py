@@ -6,7 +6,7 @@ class StudentConfirmationCreateRequest(BaseModel):
     
     #payment_booking_id: int 
     confirmation: bool  # True o False
-    description_student: str  # 🔹 Texto obligatorio
+    description_student: str  # Texto obligatorio
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -16,7 +16,7 @@ class StudentConfirmationData(BaseModel):
     student_id: int
     payment_booking_id: int
     confirmation_date_student: Optional[bool] = None
-    description_student: Optional[str] = None   # 🔹 Lo incluimos en la respuesta
+    description_student: Optional[str] = None   # Lo incluimos en la respuesta
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,6 +36,7 @@ class StudentConfirmationHistoryItem(BaseModel):
     booking_end: Optional[datetime] = None
     confirmed_by_student: Optional[bool] = None
     confirmed_by_teacher: Optional[bool] = None
+    has_assessment_by_student: Optional[bool] = None
     window_status: Optional[str] = None  # open | expired
     confirmable_now: Optional[bool] = None
     seconds_left: Optional[int] = None

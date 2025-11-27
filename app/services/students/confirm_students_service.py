@@ -23,7 +23,7 @@ import pytz
 from sqlalchemy.orm import selectinload
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.bookings import Booking
-
+from app.models.booking.assessment import Assessment
 import os
 import shutil
 import uuid
@@ -251,6 +251,8 @@ async def list_student_confirmations_recent(
     """
     student_id = await get_student_id_from_token(token)
 
+    # Traer pendientes del alumno, ordenadas por fin de clase (desc) y filtrar por ventana en código
+    now = datetime.now(timezone.utc)
     result = await db.execute(
         select(Confirmation, PaymentBooking, Booking)
         .join(PaymentBooking, PaymentBooking.id == Confirmation.payment_booking_id)
@@ -261,19 +263,30 @@ async def list_student_confirmations_recent(
     )
     rows = result.all()
 
-    now = datetime.now(timezone.utc)
     cdmx_tz = pytz.timezone("America/Mexico_City")
     items: list[dict] = []
+    pb_ids = [pb.id for _, pb, _ in rows if pb is not None]
+    assessed_set = set()
+    if pb_ids:
+        res_ass = await db.execute(
+            select(Assessment.payment_booking_id)
+            .where(Assessment.payment_booking_id.in_(pb_ids))
+            .where(Assessment.user_id == student_id)
+        )
+        assessed_set = {pb_id for (pb_id,) in res_ass.all()}
     for conf, pb, booking in rows:
         b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
         b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
         end_window = b_end + timedelta(hours=2)
-        window_open = now <= end_window
-        confirmable_now = (now >= b_end) and window_open
-        if not confirmable_now:
+        # Saltar clases que aún no terminan
+        if now < b_end:
             continue
+        # Romper en cuanto la ventana expire (por orden desc, el resto también estará expirado)
+        if now > end_window:
+            break
         seconds_left = max(int((end_window - now).total_seconds()), 0)
         window_status = "open"
+        confirmable_now = True
 
         items.append({
             "id": conf.id,
@@ -286,8 +299,9 @@ async def list_student_confirmations_recent(
             "confirmed_by_student": conf.confirmation_date_student,
             "confirmed_by_teacher": conf.confirmation_date_teacher,
             "window_status": window_status,
-            "confirmable_now": True,
+            "confirmable_now": confirmable_now,
             "seconds_left": seconds_left,
+            "has_assessment_by_student": (conf.payment_booking_id in assessed_set),
         })
 
     return items

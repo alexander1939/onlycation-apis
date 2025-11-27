@@ -37,6 +37,7 @@ class TeacherConfirmationHistoryItem(BaseModel):
     booking_end: Optional[datetime] = None
     confirmed_by_student: Optional[bool] = None
     confirmed_by_teacher: Optional[bool] = None
+    has_assessment_by_student: Optional[bool] = None
     window_status: Optional[str] = None  # open | expired
     confirmable_now: Optional[bool] = None
     seconds_left: Optional[int] = None
