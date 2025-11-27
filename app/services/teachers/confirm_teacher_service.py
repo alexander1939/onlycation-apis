@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.bookings import Booking 
 from app.models.booking.assessment import Assessment
+from app.models.teachers.availability import Availability
 from app.models.common.status import Status  
 from app.models.booking.confirmation import Confirmation
 from app.models.users.user import User
@@ -258,16 +259,16 @@ async def list_teacher_confirmations_recent(
     )
     rows = result.all()
 
-    # Prefetch assessments for these payment bookings to flag if the student already assessed
-    pb_ids = [pb.id for _, pb, _ in rows if pb is not None]
-    assessed_by_pb: dict[int, set[int]] = {}
-    if pb_ids:
-        res_ass = await db.execute(
-            select(Assessment.payment_booking_id, Assessment.user_id)
-            .where(Assessment.payment_booking_id.in_(pb_ids))
-        )
-        for pb_id, user_id in res_ass.all():
-            assessed_by_pb.setdefault(pb_id, set()).add(user_id)
+    # Prefetch students who have already assessed THIS teacher (any booking)
+    res_ass = await db.execute(
+        select(Assessment.user_id)
+        .join(PaymentBooking, PaymentBooking.id == Assessment.payment_booking_id)
+        .join(Booking, Booking.id == PaymentBooking.booking_id)
+        .join(Availability, Availability.id == Booking.availability_id)
+        .where(Availability.user_id == teacher_id)
+        .distinct()
+    )
+    assessed_students = {uid for (uid,) in res_ass.all()}
 
     cdmx_tz = pytz.timezone("America/Mexico_City")
     items: list[dict] = []
@@ -298,7 +299,7 @@ async def list_teacher_confirmations_recent(
             "window_status": window_status,
             "confirmable_now": confirmable_now,
             "seconds_left": seconds_left,
-            "has_assessment_by_student": (conf.student_id in assessed_by_pb.get(conf.payment_booking_id, set())),
+            "has_assessment_by_student": (conf.student_id in assessed_students),
         })
 
     return items

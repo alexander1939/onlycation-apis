@@ -24,6 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.bookings import Booking
 from app.models.booking.assessment import Assessment
+from app.models.teachers.availability import Availability
 import os
 import shutil
 import uuid
@@ -265,15 +266,16 @@ async def list_student_confirmations_recent(
 
     cdmx_tz = pytz.timezone("America/Mexico_City")
     items: list[dict] = []
-    pb_ids = [pb.id for _, pb, _ in rows if pb is not None]
-    assessed_set = set()
-    if pb_ids:
-        res_ass = await db.execute(
-            select(Assessment.payment_booking_id)
-            .where(Assessment.payment_booking_id.in_(pb_ids))
-            .where(Assessment.user_id == student_id)
-        )
-        assessed_set = {pb_id for (pb_id,) in res_ass.all()}
+    # Prefetch: teachers that this student has already assessed (any booking)
+    res_ass = await db.execute(
+        select(Availability.user_id)
+        .join(Booking, Booking.availability_id == Availability.id)
+        .join(PaymentBooking, PaymentBooking.booking_id == Booking.id)
+        .join(Assessment, Assessment.payment_booking_id == PaymentBooking.id)
+        .where(Assessment.user_id == student_id)
+        .distinct()
+    )
+    assessed_teachers = {tid for (tid,) in res_ass.all()}
     for conf, pb, booking in rows:
         b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
         b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
@@ -301,7 +303,7 @@ async def list_student_confirmations_recent(
             "window_status": window_status,
             "confirmable_now": confirmable_now,
             "seconds_left": seconds_left,
-            "has_assessment_by_student": (conf.payment_booking_id in assessed_set),
+            "has_assessment_by_student": (conf.teacher_id in assessed_teachers),
         })
 
     return items
