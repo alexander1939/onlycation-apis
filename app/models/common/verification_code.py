@@ -9,7 +9,8 @@ class VerificationCode(Base):
     email = Column(String(255), index=True, nullable=False)
     role = Column(String(50), nullable=False)
     purpose = Column(String(50), nullable=False)
-    code = Column(String(6), nullable=False, index=True)
+    # Puede almacenar tanto códigos cortos (OTP) como refresh tokens (JWT largos)
+    code = Column(String(1024), nullable=False)
     used = Column(Boolean, default=False, nullable=False)
     attempts = Column(Integer, default=0)  # Nuevo campo para contar intentos
     last_attempt = Column(DateTime)  # Nuevo campo para registrar último intento
