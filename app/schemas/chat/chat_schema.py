@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ============================================================================
@@ -87,19 +87,26 @@ class MarkAsReadRequest(BaseModel):
     message_ids: List[int] = Field(..., description="IDs de los mensajes a marcar como leídos")
 
 
+class ParticipantResponse(BaseModel):
+    """Esquema para información del participante en un chat"""
+    id: int
+    full_name: str
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ChatSummaryResponse(BaseModel):
     """Esquema para resumen de chat (último mensaje, contador no leídos)"""
     chat_id: int
     student_id: int
     teacher_id: int
+    participant: ParticipantResponse
     last_message: Optional[MessageResponse] = None
     unread_count: int = 0
     is_active: bool
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChatSummaryListResponse(BaseModel):
