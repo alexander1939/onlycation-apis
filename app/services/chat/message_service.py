@@ -2,6 +2,7 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_, desc, func
+from datetime import datetime, timedelta, timezone
 
 from app.models.chat import Chat, Message
 from app.models.users.user import User
@@ -220,6 +221,23 @@ class MessageService:
         # Verificar que el usuario es el remitente del mensaje
         if message.sender_id != user_id:
             raise ValueError("Solo puedes eliminar tus propios mensajes")
+        
+        # Regla 1: No se puede eliminar si ya fue leído
+        if message.is_read:
+            raise ValueError("No puedes eliminar un mensaje que ya fue leído")
+        
+        # Regla 2: Ventana de 10 minutos desde la creación
+        now_utc = datetime.now(timezone.utc)
+        created_at = message.created_at
+        # Asegurar que ambas fechas sean timezone-aware
+        if created_at is None:
+            # Si por alguna razón no hay timestamp, no permitir eliminar
+            raise ValueError("No es posible eliminar este mensaje en este momento")
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        elapsed = now_utc - created_at
+        if elapsed > timedelta(minutes=10):
+            raise ValueError("Solo puedes eliminar mensajes dentro de los primeros 10 minutos de enviados")
         
         # Marcar como eliminado (soft delete)
         message.is_deleted = True

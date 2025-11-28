@@ -115,3 +115,43 @@ class ChatSummaryListResponse(BaseModel):
     message: str
     data: List[ChatSummaryResponse]
     total: int
+
+
+# ============================================================================
+# ESQUEMA LIGERO PARA LISTA DE CHATS (Preview estilo WhatsApp)
+# ============================================================================
+class ChatPreview(BaseModel):
+    """Elemento ligero para mostrar lista de chats sin mensajes completos."""
+    chat_id: int
+    participant: ParticipantResponse  # nombre de la otra persona
+    last_message_preview: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+    unread_count: int = 0
+
+
+class ChatPreviewListResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[ChatPreview]
+    total: int
+
+
+# ============================================================================
+# CANDIDATOS DE CHAT (Personas con las que puedes chatear por tener reserva activa)
+# ============================================================================
+class ChatCandidate(BaseModel):
+    participant: ParticipantResponse  # persona con la que puedes chatear (el otro)
+    next_booking_start: datetime
+    existing_chat_id: Optional[int] = None  # si ya hay chat activo, su ID
+
+
+class ChatCandidateListResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[ChatCandidate]
+    total: int
+
+
+class ChatEnsureRequest(BaseModel):
+    """Solicitud para asegurar/crear un chat con otro usuario (participant)."""
+    other_user_id: int

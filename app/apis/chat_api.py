@@ -13,6 +13,9 @@ from app.schemas.chat.chat_schema import (
     MarkAsReadRequest,
     ChatSummaryResponse,
     ChatSummaryListResponse,
+    ChatPreview,
+    ChatPreviewListResponse,
+    ChatEnsureRequest,
 )
 from app.services.chat import ChatService, MessageService
 
@@ -39,14 +42,14 @@ async def create_chat(
         if current_user["role"] != "student":
             raise HTTPException(
                 status_code=403,
-                detail="❌ Solo los estudiantes pueden crear chats con profesores"
+                detail="Solo los estudiantes pueden crear chats con profesores"
             )
         
         # Verificar que el estudiante no está creando un chat consigo mismo
         if current_user["user_id"] == request.teacher_id:
             raise HTTPException(
                 status_code=400,
-                detail="❌ No puedes crear un chat contigo mismo"
+                detail="No puedes crear un chat contigo mismo"
             )
         
         # Crear el chat
@@ -66,7 +69,7 @@ async def create_chat(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail="❌ Error interno al crear el chat. Por favor, intenta nuevamente."
+            detail="Error interno al crear el chat. Por favor, intenta nuevamente."
         )
 
 
@@ -87,7 +90,7 @@ async def get_my_chats(
         
         return ChatSummaryListResponse(
             success=True,
-            message=f"✅ {len(summaries)} chat(s) encontrado(s) en tu cuenta",
+            message=f"{len(summaries)} chat(s) encontrado(s) en tu cuenta",
             data=summaries,
             total=len(summaries)
         )
@@ -95,7 +98,58 @@ async def get_my_chats(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail="❌ Error interno al obtener los chats. Por favor, intenta nuevamente."
+            detail="Error interno al obtener los chats. Por favor, intenta nuevamente."
+        )
+
+
+@router.get("/chats/previews", response_model=ChatPreviewListResponse)
+async def get_chat_previews(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(auth_required)
+):
+    """
+    Lista ligera de chats del usuario (estilo WhatsApp) y ASEGURA previamente los chats
+    basados en reservas ACTIVAS (futuras, no canceladas) del usuario. Así no necesitas
+    llamar a otra API para crearlos.
+
+    Retorna: chat_id, participant (otro usuario), last_message_preview, last_message_at,
+    unread_count. No incluye historial completo.
+    """
+    try:
+        # 1) Asegurar (crear/reactivar) chats de reservas activas del usuario
+        await ChatService.ensure_chats_for_user_active_bookings(db=db, user_id=current_user["user_id"])
+
+        # 2) Obtener resúmenes y convertir a previews ligeros
+        summaries = await ChatService.get_chat_summaries(
+            db=db,
+            user_id=current_user["user_id"],
+            user_role=current_user["role"]
+        )
+
+        previews: list[ChatPreview] = []
+        for s in summaries:
+            last_preview = s.last_message.content if s.last_message else None
+            last_at = s.last_message.created_at if s.last_message else None
+            previews.append(
+                ChatPreview(
+                    chat_id=s.chat_id,
+                    participant=s.participant,
+                    last_message_preview=last_preview,
+                    last_message_at=last_at,
+                    unread_count=s.unread_count,
+                )
+            )
+
+        return ChatPreviewListResponse(
+            success=True,
+            message=f"{len(previews)} chat(s) encontrados",
+            data=previews,
+            total=len(previews),
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Error interno al obtener la lista de chats. Por favor, intenta nuevamente.",
         )
 
 
@@ -117,7 +171,7 @@ async def block_chat(
         
         return {
             "success": True,
-            "message": "✅ Chat bloqueado exitosamente",
+            "message": "Chat bloqueado exitosamente",
             "data": ChatResponse.model_validate(chat)
         }
         
@@ -126,7 +180,7 @@ async def block_chat(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail="❌ Error interno al bloquear el chat. Por favor, intenta nuevamente."
+            detail="Error interno al bloquear el chat. Por favor, intenta nuevamente."
         )
 
 
@@ -148,7 +202,7 @@ async def unblock_chat(
         
         return {
             "success": True,
-            "message": "✅ Chat desbloqueado exitosamente",
+            "message": "Chat desbloqueado exitosamente",
             "data": ChatResponse.model_validate(chat)
         }
         
@@ -157,7 +211,54 @@ async def unblock_chat(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail="❌ Error interno al desbloquear el chat. Por favor, intenta nuevamente."
+            detail="Error interno al desbloquear el chat. Por favor, intenta nuevamente."
+        )
+
+
+@router.post("/chats/ensure", response_model=ChatResponse)
+async def ensure_chat(
+    request: ChatEnsureRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(auth_required)
+):
+    """
+    Crea o devuelve un chat existente con el usuario indicado por `other_user_id`,
+    solo si existe una reserva ACTIVA (futura y no cancelada) entre ambos.
+    - Si ya hay chat activo, lo retorna.
+    - Si existe inactivo, lo reactiva.
+    - Si no hay reserva activa, 400.
+    Funciona para alumno y docente (detecta rol automáticamente).
+    """
+    try:
+        user_id = current_user["user_id"]
+        role = current_user["role"]
+
+        if role == "student":
+            chat = await ChatService.create_chat(
+                db=db,
+                student_id=user_id,
+                teacher_id=request.other_user_id,
+            )
+        elif role == "teacher":
+            chat = await ChatService.create_chat(
+                db=db,
+                student_id=request.other_user_id,
+                teacher_id=user_id,
+            )
+        else:
+            raise HTTPException(status_code=403, detail="Rol no soportado para chat")
+
+        return ChatResponse.model_validate(chat)
+
+    except ValueError as e:
+        # Regla de negocio (sin reserva activa, etc.)
+        raise HTTPException(status_code=400, detail=f"❌ {str(e)}")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Error interno al asegurar el chat. Por favor, intenta nuevamente.",
         )
 
 
@@ -208,7 +309,7 @@ async def send_message(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail="❌ Error interno al enviar el mensaje. Por favor, intenta nuevamente."
+            detail="Error interno al enviar el mensaje. Por favor, intenta nuevamente."
         )
 
 
@@ -238,7 +339,7 @@ async def get_chat_messages(
         
         return MessageListResponse(
             success=True,
-            message=f"✅ {len(message_responses)} mensaje(s) cargado(s) correctamente",
+            message=f"{len(message_responses)} mensaje(s) cargado(s) correctamente",
             data=message_responses,
             total=len(message_responses),
             chat_id=chat_id
@@ -249,7 +350,7 @@ async def get_chat_messages(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail="❌ Error interno al obtener los mensajes. Por favor, intenta nuevamente."
+            detail="Error interno al obtener los mensajes. Por favor, intenta nuevamente."
         )
 
 
@@ -267,7 +368,7 @@ async def mark_messages_as_read(
         if not request.message_ids:
             raise HTTPException(
                 status_code=400,
-                detail="❌ Debes proporcionar al menos un ID de mensaje"
+                detail="Debes proporcionar al menos un ID de mensaje"
             )
         
         # Obtener el primer mensaje para verificar el chat
@@ -293,7 +394,7 @@ async def mark_messages_as_read(
         
         return {
             "success": True,
-            "message": f"✅ {count} mensaje(s) marcado(s) como leído(s)",
+            "message": f"{count} mensaje(s) marcado(s) como leído(s)",
             "data": {"marked_count": count}
         }
         
@@ -302,7 +403,7 @@ async def mark_messages_as_read(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail="❌ Error interno al marcar mensajes como leídos. Por favor, intenta nuevamente."
+            detail="Error interno al marcar mensajes como leídos. Por favor, intenta nuevamente."
         )
 
 
@@ -324,7 +425,7 @@ async def delete_message(
         
         return {
             "success": True,
-            "message": "✅ Mensaje eliminado exitosamente",
+            "message": "Mensaje eliminado exitosamente",
             "data": {"deleted": success}
         }
         
@@ -333,7 +434,7 @@ async def delete_message(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail="❌ Error interno al eliminar el mensaje. Por favor, intenta nuevamente."
+            detail="Error interno al eliminar el mensaje. Por favor, intenta nuevamente."
         )
 
 
@@ -362,5 +463,5 @@ async def get_unread_count(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail="❌ Error interno al obtener el contador de mensajes no leídos. Por favor, intenta nuevamente."
+            detail="Error interno al obtener el contador de mensajes no leídos. Por favor, intenta nuevamente."
         )
