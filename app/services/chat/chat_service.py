@@ -5,7 +5,9 @@ from sqlalchemy import and_, or_, desc, func
 
 from app.models.chat import Chat, Message
 from app.models.users.user import User
-from app.schemas.chat.chat_schema import ChatCreateRequest, ChatSummaryResponse
+from app.models.users.profile import Profile
+from app.schemas.chat.chat_schema import ChatCreateRequest, ChatSummaryResponse, MessageResponse, ParticipantResponse
+from app.services.chat.message_service import MessageService
 
 
 class ChatService:
@@ -126,6 +128,39 @@ class ChatService:
         return result.scalars().all()
     
     @staticmethod
+    async def _get_user_participant_info(
+        db: AsyncSession,
+        user_id: int
+    ) -> Optional[dict]:
+        """Obtiene la información del participante (usuario)"""
+        try:
+            # Obtener el usuario con su perfil en una sola consulta
+            stmt = select(
+                User,
+                Profile
+            ).outerjoin(
+                Profile, User.id == Profile.user_id
+            ).where(User.id == user_id)
+            
+            result = await db.execute(stmt)
+            user_data = result.first()
+            
+            if not user_data or not user_data[0]:  # Si no hay usuario
+                return None
+                
+            user = user_data[0]
+            profile = user_data[1]  # Puede ser None si no hay perfil
+            
+            return {
+                "id": user.id,
+                "full_name": f"{user.first_name or ''} {user.last_name or ''}".strip()
+            }
+            
+        except Exception as e:
+            print(f"Error al obtener información del participante {user_id}: {str(e)}")
+            return None
+    
+    @staticmethod
     async def get_chat_summaries(
         db: AsyncSession, 
         user_id: int, 
@@ -133,20 +168,24 @@ class ChatService:
     ) -> List[ChatSummaryResponse]:
         """
         Obtiene resúmenes de chats con información del último mensaje y contador de no leídos.
-        
-        Args:
-            db: Sesión de base de datos
-            user_id: ID del usuario
-            user_role: Rol del usuario ('student' o 'teacher')
-            
-        Returns:
-            List[ChatSummaryResponse]: Lista de resúmenes de chats
+        Incluye información del participante (estudiante o profesor según el rol del usuario actual).
         """
         # Obtener chats del usuario
         chats = await ChatService.get_user_chats(db, user_id, user_role)
         summaries = []
         
         for chat in chats:
+            # Determinar el ID del otro participante
+            # Si el usuario actual es estudiante, el participante es el profesor y viceversa
+            other_participant_id = chat.teacher_id if user_role == "student" else chat.student_id
+            
+            # Obtener información del otro participante
+            participant_info = await ChatService._get_user_participant_info(db, other_participant_id)
+            
+            # Si no se pudo obtener la información del participante, saltar este chat
+            if not participant_info:
+                continue
+                
             # Obtener último mensaje
             last_message_query = select(Message).where(
                 and_(
@@ -157,6 +196,26 @@ class ChatService:
             
             last_message_result = await db.execute(last_message_query)
             last_message = last_message_result.scalar_one_or_none()
+            
+            # Procesar último mensaje si existe
+            last_message_response = None
+            if last_message:
+                try:
+                    decrypted_content = MessageService.decrypt_message_content(last_message, user_id)
+                    last_message_response = MessageResponse(
+                        id=last_message.id,
+                        chat_id=last_message.chat_id,
+                        sender_id=last_message.sender_id,
+                        content=decrypted_content,
+                        is_read=last_message.is_read,
+                        is_deleted=last_message.is_deleted,
+                        is_encrypted=last_message.is_encrypted,
+                        encryption_version=last_message.encryption_version,
+                        created_at=last_message.created_at,
+                        updated_at=last_message.updated_at
+                    )
+                except Exception as e:
+                    last_message_response = None
             
             # Contar mensajes no leídos
             unread_query = select(func.count(Message.id)).where(
@@ -171,12 +230,13 @@ class ChatService:
             unread_result = await db.execute(unread_query)
             unread_count = unread_result.scalar() or 0
             
-            # Crear resumen
+            # Crear resumen con la información del participante
             summary = ChatSummaryResponse(
                 chat_id=chat.id,
                 student_id=chat.student_id,
                 teacher_id=chat.teacher_id,
-                last_message=last_message,
+                participant=ParticipantResponse(**participant_info),
+                last_message=last_message_response,
                 unread_count=unread_count,
                 is_active=chat.is_active,
                 created_at=chat.created_at,
@@ -253,4 +313,4 @@ class ChatService:
         await db.commit()
         await db.refresh(chat)
         
-        return chat
+        return chat 
