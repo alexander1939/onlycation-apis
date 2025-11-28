@@ -162,6 +162,9 @@ def create_app() -> FastAPI:
     origins = [
         "http://localhost:5173/",
         "http://localhost:5173",
+        "http://localhost:4173/",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
         "https://onlycation.com",
         "https://onlycation.com/",
         "http://onlycation-frontend-8qopam-48445e-31-220-59-219.traefik.me",
