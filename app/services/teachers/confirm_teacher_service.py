@@ -36,6 +36,10 @@ cipher = Fernet(EVIDENCE_KEY.encode())
 UPLOAD_DIR_TEACHER = os.path.join(os.getcwd(), "evidence", "teacher")
 os.makedirs(UPLOAD_DIR_TEACHER, exist_ok=True)
 
+# Carpeta raíz para evidencia de student (para descargas unificadas)
+UPLOAD_DIR_STUDENT = os.path.join(os.getcwd(), "evidence", "student")
+os.makedirs(UPLOAD_DIR_STUDENT, exist_ok=True)
+
 from app.services.utils.pagination_service import PaginationService
 from sqlalchemy import func
 
@@ -213,6 +217,11 @@ async def get_teacher_evidence(
         )
 
     filename = confirmation.evidence_teacher
+    if not filename:
+        raise HTTPException(
+            status_code=404,
+            detail="No existe evidencia registrada para este docente"
+        )
     file_path = os.path.join(UPLOAD_DIR_TEACHER, filename)
 
     if not os.path.exists(file_path):
@@ -232,6 +241,69 @@ async def get_teacher_evidence(
             status_code=500,
             detail="Error al desencriptar la evidencia"
         )
+
+    return evidence_bytes, filename
+
+
+async def get_confirmation_evidence_for_viewer(
+    db: AsyncSession,
+    token: str,
+    confirmation_id: int,
+    side: str | None = None,
+) -> tuple[bytes, str]:
+    """Devuelve bytes y nombre de archivo de evidencia para una confirmación.
+    Parámetro side:
+      - "auto" (por defecto): si el viewer es docente -> evidencia del docente; si es alumno -> evidencia del alumno.
+      - "teacher": retorna evidencia del docente.
+      - "student": retorna evidencia del alumno.
+    Acceso: CUALQUIERA de los participantes (docente o alumno) puede descargar la evidencia de AMBOS lados
+    siempre que pertenezca a esa confirmación.
+    """
+    side = (side or "auto").lower()
+    if side not in ("auto", "teacher", "student"):
+        raise HTTPException(status_code=400, detail="Parámetro 'side' inválido. Usa: student | teacher | auto")
+    payload = verify_token(token)
+    viewer_id = payload.get("user_id")
+    if not viewer_id:
+        raise HTTPException(status_code=401, detail="Token inválido: falta user_id")
+
+    # Obtener la confirmación
+    result = await db.execute(select(Confirmation).where(Confirmation.id == confirmation_id))
+    conf = result.scalar_one_or_none()
+    if not conf:
+        raise HTTPException(status_code=404, detail="Confirmación no encontrada")
+
+    # Verificar que el viewer es participante
+    if viewer_id not in (conf.teacher_id, conf.student_id):
+        raise HTTPException(status_code=403, detail="No tienes acceso a esta confirmación")
+
+    viewer_role = "teacher" if viewer_id == conf.teacher_id else "student"
+    # Determinar objetivo de evidencia (auto = rol del viewer). Se permite cruzado (student<->teacher) si es participante.
+    target = viewer_role if (not side or side == "auto") else side
+
+    if target == "teacher":
+        filename = conf.evidence_teacher
+        base_dir = UPLOAD_DIR_TEACHER
+        not_found_msg = "No existe evidencia registrada para este docente"
+    else:
+        filename = conf.evidence_student
+        base_dir = UPLOAD_DIR_STUDENT
+        not_found_msg = "No existe evidencia registrada para este estudiante"
+
+    if not filename:
+        raise HTTPException(status_code=404, detail=not_found_msg)
+
+    file_path = os.path.join(base_dir, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="El archivo de evidencia no existe en el servidor")
+
+    # Leer y desencriptar
+    with open(file_path, "rb") as f:
+        encrypted_data = f.read()
+    try:
+        evidence_bytes = cipher.decrypt(encrypted_data)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error al desencriptar la evidencia")
 
     return evidence_bytes, filename
 
@@ -445,6 +517,15 @@ async def get_confirmation_detail(
         b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
         b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
 
+    # Construir URLs de descarga (unificadas) en lugar de nombres de archivo
+    base_path = "/api/confirmation"
+    evidence_student_url = (
+        f"/evidence/{conf.id}?side=student&download=true" if conf.evidence_student else None
+    )
+    evidence_teacher_url = (
+        f"/evidence/{conf.id}?side=teacher&download=true" if conf.evidence_teacher else None
+    )
+
     return {
         "id": conf.id,
         "teacher_id": conf.teacher_id,
@@ -454,8 +535,8 @@ async def get_confirmation_detail(
         "booking_end": b_end,
         "confirmed_by_student": conf.confirmation_date_student,
         "confirmed_by_teacher": conf.confirmation_date_teacher,
-        "evidence_student": conf.evidence_student,
-        "evidence_teacher": conf.evidence_teacher,
+        "evidence_student": evidence_student_url,
+        "evidence_teacher": evidence_teacher_url,
         "description_student": conf.description_student,
         "description_teacher": conf.description_teacher,
     }

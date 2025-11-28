@@ -20,6 +20,7 @@ from app.services.teachers.confirm_teacher_service import (
     list_teacher_confirmations_all,
     get_confirmation_detail,
     list_teacher_confirmations_by_date,
+    get_confirmation_evidence_for_viewer
 )
 
 
@@ -150,9 +151,48 @@ async def get_teacher_confirmations_by_date(
 )
 async def get_confirmation_detail_api(
     confirmation_id: int,
+    download: bool = False,
+    side: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ):
     token = credentials.credentials
+    # Si se solicita descarga, devolver archivo de evidencia del dueño (o del 'side' indicado)
+    if download:
+        evidence_bytes, filename = await get_confirmation_evidence_for_viewer(db, token, confirmation_id, side=side)
+        return StreamingResponse(
+            io.BytesIO(evidence_bytes),
+            media_type="image/jpeg",  # TODO: detectar dinámicamente por extensión
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    # Si no, devolver solo metadatos
     data = await get_confirmation_detail(db, token, confirmation_id)
     return {"success": True, "data": data}
+
+
+@router.get("/evidence/{confirmation_id}")
+async def get_confirmation_evidence_api(
+    confirmation_id: int,
+    download: bool = False,
+    side: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Descarga o muestra la evidencia correspondiente al usuario autenticado.
+    - Si el viewer es el docente dueño de la confirmación -> retorna evidencia del docente.
+    - Si el viewer es el alumno dueño -> retorna evidencia del alumno.
+    - En otro caso -> 403.
+    Usa ?download=true para forzar descarga (attachment).
+    """
+    token = credentials.credentials
+    evidence_bytes, filename = await get_confirmation_evidence_for_viewer(db, token, confirmation_id, side=side)
+    disposition = "attachment" if download else "inline"
+    return StreamingResponse(
+        io.BytesIO(evidence_bytes),
+        media_type="image/jpeg",  # TODO: detectar dinámicamente por extensión
+        headers={
+            "Content-Disposition": f"{disposition}; filename={filename}"
+        }
+    )

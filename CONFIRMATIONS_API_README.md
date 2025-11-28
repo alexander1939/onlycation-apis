@@ -14,7 +14,7 @@ Evidencias (archivos):
 
 Ventanas de confirmación (tiempo permitido después de que termina la clase):
 - Alumno: 2 horas
-- Docente: 4 horas (según la lógica actual del servicio del docente)
+- Docente: 2 horas
 
 En respuestas de historial verás:
 - `booking_start`, `booking_end`: inicio/fin de la clase (UTC, ISO 8601)
@@ -75,12 +75,13 @@ Errores comunes: `400` (ventana expirada), `401` (token inválido), `404` (booki
 Descarga la evidencia del alumno (desencriptada) como imagen.
 
 - Método: `GET`
-- URL: `/api/confirm/student/evidence/{confirmation_id}`
+- URL: `/api/confirmation/student/evidence/{confirmation_id}`
 - Headers: `Authorization: Bearer <TOKEN>`
+- Acceso: Solo el alumno dueño de la confirmación puede descargar su evidencia.
 
 Ejemplo curl:
 ```bash
-curl -X GET "https://tu-host/api/confirm/student/evidence/456" \
+curl -X GET "https://tu-host/api/confirmation/student/evidence/456" \
   -H "Authorization: Bearer TU_TOKEN" \
   -o evidencia.jpg
 ```
@@ -217,12 +218,13 @@ Respuesta 200 (JSON):
 Descarga la evidencia del docente como imagen.
 
 - Método: `GET`
-- URL: `/api/confirm/teacher/evidence/{confirmation_id}`
+- URL: `/api/confirmation/teacher/evidence/{confirmation_id}`
 - Headers: `Authorization: Bearer <TOKEN>`
+- Acceso: Solo el docente dueño de la confirmación puede descargar su evidencia.
 
 Ejemplo curl:
 ```bash
-curl -X GET "https://tu-host/api/confirm/teacher/evidence/789" \
+curl -X GET "https://tu-host/api/confirmation/teacher/evidence/789" \
   -H "Authorization: Bearer TU_TOKEN" \
   -o evidencia_docente.jpg
 ```
@@ -230,7 +232,7 @@ curl -X GET "https://tu-host/api/confirm/teacher/evidence/789" \
 ---
 
 ### 3) GET /teacher/history/recent
-Devuelve SOLO confirmaciones confirmables ahora (clase terminó y ventana abierta). Ordenadas por fin de clase (desc). La ventana actual del docente es de 4 horas.
+Devuelve SOLO confirmaciones confirmables ahora (clase terminó y ventana abierta). Ordenadas por fin de clase (desc). La ventana actual del docente es de 2 horas.
 
 - Método: `GET`
 - URL: `/api/confirm/teacher/history/recent`
@@ -258,7 +260,7 @@ Respuesta 200:
       "confirmed_by_teacher": null,
       "window_status": "open",
       "confirmable_now": true,
-      "seconds_left": 11999
+      "seconds_left": 7199
     }
   ]
 }
@@ -307,6 +309,82 @@ Respuesta 200:
 
 ---
 
+## Evidencia unificada (Docente o Alumno)
+
+### GET /evidence/{confirmation_id}
+Devuelve la evidencia correspondiente al usuario autenticado:
+- Si el viewer es el docente dueño, retorna la evidencia del docente.
+- Si el viewer es el alumno dueño, retorna la evidencia del alumno.
+- En otro caso, `403 Forbidden`.
+
+- Método: `GET`
+- URL: `/api/confirmation/evidence/{confirmation_id}`
+- Headers: `Authorization: Bearer <TOKEN>`
+- Query: `download` (bool, opcional). Si es `true`, fuerza descarga (`attachment`). Por defecto `inline`.
+
+Ejemplos curl:
+```bash
+# Ver en navegador (inline)
+curl -X GET "https://tu-host/api/confirmation/evidence/789" \
+  -H "Authorization: Bearer TU_TOKEN"
+
+# Forzar descarga
+curl -X GET "https://tu-host/api/confirmation/evidence/789?download=true" \
+  -H "Authorization: Bearer TU_TOKEN" \
+  -o evidencia.jpg
+```
+
+Posibles errores:
+- `401`: token inválido/ausente
+- `403`: no eres docente/alumno dueño de la confirmación
+- `404`: confirmación o evidencia no encontrada
+- `500`: error al desencriptar
+
+---
+
+## Detalle de confirmación (Docente/Alumno)
+
+### GET /detail/{confirmation_id}
+Devuelve el detalle de una confirmación específica. Solo puede acceder el docente o el alumno dueño de la confirmación.
+
+- Método: `GET`
+- URL: `/api/confirm/detail/{confirmation_id}`
+- Headers: `Authorization: Bearer <TOKEN>`
+
+Ejemplo curl:
+```bash
+curl -X GET "https://tu-host/api/confirm/detail/789" \
+  -H "Authorization: Bearer TU_TOKEN"
+```
+
+Respuesta 200:
+```json
+{
+  "success": true,
+  "data": {
+    "id": 789,
+    "teacher_id": 78,
+    "student_id": 99,
+    "payment_booking_id": 123,
+    "booking_start": "2025-11-26T06:00:00Z",
+    "booking_end": "2025-11-26T07:00:00Z",
+    "confirmed_by_student": "2025-11-26T07:10:00Z",
+    "confirmed_by_teacher": null,
+    "evidence_student": "evidence/student/...",
+    "evidence_teacher": "evidence/teacher/...",
+    "description_student": "Clase completada sin problemas",
+    "description_teacher": "Clase impartida correctamente"
+  }
+}
+```
+
+Errores:
+- `401`: token inválido/ausente
+- `403`: no tienes acceso a esta confirmación (ni docente ni alumno dueño)
+- `404`: confirmación no encontrada
+
+---
+
 ## Códigos de estado y errores comunes
 - `200 OK`: Operación exitosa.
 - `400 Bad Request`: ventana de confirmación expirada u otros errores de validación.
@@ -320,4 +398,4 @@ Respuesta 200:
 ## Notas
 - Los endpoints `recent` solo retornan ítems confirmables en este momento.
 - Los endpoints `all` usan paginación por `offset/limit` y devuelven `total` y `has_more`.
-- Si quieres unificar la ventana de docente a 2 horas, se puede ajustar en el service del docente.
+- El endpoint `/detail/{confirmation_id}` solo devuelve metadatos (incluye nombres de archivo). Para obtener el archivo real usa `/teacher/evidence/{id}`, `/student/evidence/{id}` o el unificado `/evidence/{id}`.
