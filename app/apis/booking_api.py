@@ -91,6 +91,7 @@ async def reagendar_booking(
     """
     Reagenda una reserva existente a un nuevo horario disponible del docente.
     Solo se puede reagendar hasta 30 minutos antes de la clase.
+    Soporta modo multi-hora enviando `items` (tramos contiguos por hora) tal como en BookingRequest.
     """
     booking_data = await reschedule_booking(
         db=db,
@@ -98,7 +99,8 @@ async def reagendar_booking(
         booking_id=request.booking_id,
         new_availability_id=request.new_availability_id,
         new_start_time=request.new_start_time,
-        new_end_time=request.new_end_time
+        new_end_time=request.new_end_time,
+        items=request.items,
     )
     
     return {

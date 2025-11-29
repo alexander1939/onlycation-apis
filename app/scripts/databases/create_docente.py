@@ -12,6 +12,7 @@ from app.models.booking.bookings import Booking
 from app.models.booking.payment_bookings import PaymentBooking
 from app.models.booking.confirmation import Confirmation
 from app.models.booking.assessment import Assessment
+from app.models.booking.reschedule_request import RescheduleRequest
 from app.models.subscriptions.plan import Plan
 from app.models.subscriptions.payment_subscription import PaymentSubscription
 from app.models.subscriptions.subscription import Subscription
@@ -336,8 +337,16 @@ async def crear_docente():
         )
         old_bookings = delete_bookings.scalars().all()
         
-        # Primero eliminar Confirmations y PaymentBookings asociados
+        # Primero eliminar RescheduleRequests, Confirmations y PaymentBookings asociados
         for old_booking in old_bookings:
+            # RescheduleRequests ligados al booking
+            resreq_q = await db.execute(
+                select(RescheduleRequest).where(RescheduleRequest.booking_id == old_booking.id)
+            )
+            resreqs = resreq_q.scalars().all()
+            for rr in resreqs:
+                await db.delete(rr)
+            
             payment_booking_q = await db.execute(
                 select(PaymentBooking).where(PaymentBooking.booking_id == old_booking.id)
             )

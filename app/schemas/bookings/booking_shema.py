@@ -45,9 +45,12 @@ class VerifyBookingPaymentResponse(BaseModel):
 
 class RescheduleBookingRequest(BaseModel):
     booking_id: int
-    new_availability_id: int
-    new_start_time: datetime
-    new_end_time: datetime
+    # Modo simple (compatibilidad)
+    new_availability_id: Optional[int] = None
+    new_start_time: Optional[datetime] = None
+    new_end_time: Optional[datetime] = None
+    # Modo avanzado: lista de tramos por hora (como en BookingRequest.items)
+    items: Optional[List[BookingSegment]] = None
 
 class RescheduleBookingResponse(BaseModel):
     success: bool
