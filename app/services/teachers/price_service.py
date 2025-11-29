@@ -1,5 +1,5 @@
 from sqlalchemy import select
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import desc
 
@@ -218,3 +218,114 @@ async def get_price_availability_by_token(db: AsyncSession, token: str) -> dict:
             for r in ranges
         ],
     }
+
+async def update_price_by_token(
+    db: AsyncSession,
+    token: str,
+    selected_prices: float,
+    price_range_id: int | None = None,
+) -> Price:
+    """Actualiza el precio base del docente autenticado con las reglas:
+    - Solo el dueño (token) puede actualizar su precio.
+    - Enfriamiento de 30 días desde el último cambio (updated_at o created_at).
+    - Validaciones iguales a create: dentro del rango y correspondiente al nivel educativo de su preferencia.
+    - No afecta reservas/pagos anteriores (no se tocan PaymentBooking existentes).
+    - Recalcula extra_hour_price = selected_prices / 2 y mapea a StripePrice (reusa o crea).
+    """
+    user_id = await get_user_id_from_token(token)
+
+    # Obtener registro Price existente
+    res = await db.execute(select(Price).where(Price.user_id == user_id))
+    price_obj: Price | None = res.scalars().one_or_none()
+    if not price_obj:
+        raise ValueError("No tienes un precio registrado aún. Debes crearlo primero.")
+
+    # Verificar cooldown de 30 días
+    last_change = price_obj.updated_at or price_obj.created_at
+    if not last_change:
+        # fallback defensivo: si no hay timestamps, bloquear
+        raise ValueError("No es posible actualizar el precio en este momento (timestamps inválidos)")
+    now = datetime.now(timezone.utc)
+    # Normalizar tz si fuera naive
+    if last_change.tzinfo is None:
+        last_change = last_change.replace(tzinfo=timezone.utc)
+    if (now - last_change) < timedelta(days=30):
+        raise ValueError("Solo puedes actualizar tu precio cada 30 días desde el último cambio")
+
+    # Resolver rango objetivo: si no se envía, mantener el actual
+    target_range_id = int(price_range_id) if price_range_id is not None else int(price_obj.price_range_id)
+
+    # Validaciones: rango existe, corresponde al nivel educativo de su preferencia y precio dentro del rango
+    await _validate_price_range_exists(db, target_range_id)
+    await _validate_price_range_matches_educational_level(db, target_range_id, price_obj.preference_id)
+    _validate_selected_price_within_range(selected_prices, target_range_id)
+
+    # Calcular extra hour auto
+    auto_extra_price = round(selected_prices / 2, 2)
+    tipo = "tutorias"
+    currency = "mxn"
+
+    # StripePrice para precio base
+    sp_base_res = await db.execute(
+        select(StripePrice).where(StripePrice.amount == selected_prices, StripePrice.type == tipo)
+    )
+    sp_base = sp_base_res.scalar_one_or_none()
+    if not sp_base:
+        product = stripe.Product.create(
+            name=f"Tutoría precio {selected_prices}",
+            description="Pago por tutoría individual",
+        )
+        price_created = stripe.Price.create(
+            unit_amount=int(selected_prices * 100),
+            currency=currency,
+            product=product.id,
+        )
+        sp_base = StripePrice(
+            stripe_product_id=product.id,
+            stripe_price_id=price_created.id,
+            amount=selected_prices,
+            currency=currency,
+            type=tipo,
+        )
+        db.add(sp_base)
+        await db.flush()
+
+    # StripePrice para extra hour
+    sp_extra_res = await db.execute(
+        select(StripePrice).where(StripePrice.amount == auto_extra_price, StripePrice.type == tipo)
+    )
+    sp_extra = sp_extra_res.scalar_one_or_none()
+    if not sp_extra:
+        product_extra = stripe.Product.create(
+            name=f"Tutoría precio {auto_extra_price}",
+            description="Pago por hora extra de tutoría",
+        )
+        price_extra_created = stripe.Price.create(
+            unit_amount=int(auto_extra_price * 100),
+            currency=currency,
+            product=product_extra.id,
+        )
+        sp_extra = StripePrice(
+            stripe_product_id=product_extra.id,
+            stripe_price_id=price_extra_created.id,
+            amount=auto_extra_price,
+            currency=currency,
+            type=tipo,
+        )
+        db.add(sp_extra)
+        await db.flush()
+
+    # Actualizar Price existente
+    price_obj.selected_prices = selected_prices
+    price_obj.extra_hour_price = auto_extra_price
+    price_obj.price_range_id = target_range_id
+    price_obj.stripe_product_id = sp_base.stripe_product_id
+    price_obj.stripe_price_id = sp_base.stripe_price_id
+    price_obj.stripe_extra_product_id = sp_extra.stripe_product_id
+    price_obj.stripe_extra_price_id = sp_extra.stripe_price_id
+    # updated_at se actualizará por onupdate=func.now(), pero seteamos por seguridad
+    price_obj.updated_at = now
+
+    await db.commit()
+    await db.refresh(price_obj)
+    return price_obj

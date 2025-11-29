@@ -313,9 +313,9 @@ async def list_teacher_confirmations_recent(
     db: AsyncSession,
     token: str,
 ) -> list[dict]:
-    """Devuelve SOLO confirmaciones confirmables para el docente (ventana abierta después del fin
-    de la clase), ordenadas por más recientes (fin de clase desc). La ventana se calcula como
-    fin_de_clase + 2 horas, en línea con la política actual del servicio de confirmación del docente.
+    """Devuelve confirmaciones "recientes" para el docente:
+    - Confirmables: clases ya terminadas con ventana abierta (fin + 2h), ordenadas por fin desc.
+    - Próximas (upcoming): clases futuras aún no iniciadas, ordenadas por inicio asc.
     """
     teacher_id = await get_teacher_id_from_token(token)
 
@@ -343,22 +343,37 @@ async def list_teacher_confirmations_recent(
     assessed_students = {uid for (uid,) in res_ass.all()}
 
     cdmx_tz = pytz.timezone("America/Mexico_City")
-    items: list[dict] = []
+    confirmable_items: list[dict] = []
+    upcoming_items: list[dict] = []
     for conf, pb, booking in rows:
         b_start = booking.start_time.astimezone(timezone.utc) if booking.start_time.tzinfo else cdmx_tz.localize(booking.start_time).astimezone(timezone.utc)
         b_end = booking.end_time.astimezone(timezone.utc) if booking.end_time.tzinfo else cdmx_tz.localize(booking.end_time).astimezone(timezone.utc)
         end_window = b_end + timedelta(hours=2)
-        # Saltar clases que aún no terminan
+        # Próximas: aún no termina
         if now < b_end:
+            seconds_to_start = max(int((b_start - now).total_seconds()), 0)
+            upcoming_items.append({
+                "id": conf.id,
+                "teacher_id": conf.teacher_id,
+                "student_id": conf.student_id,
+                "payment_booking_id": conf.payment_booking_id,
+                "payment_created_at": pb.created_at,
+                "booking_start": b_start,
+                "booking_end": b_end,
+                "confirmed_by_student": conf.confirmation_date_student,
+                "confirmed_by_teacher": conf.confirmation_date_teacher,
+                "window_status": "upcoming",
+                "confirmable_now": False,
+                "seconds_left": seconds_to_start,
+                "has_assessment_by_student": (conf.student_id in assessed_students),
+            })
             continue
-        # Si ya expiró la ventana de 2h, romper (por orden desc, los siguientes también expiraron)
+        # Expiradas: romper (por orden desc, lo siguiente también expiró)
         if now > end_window:
             break
+        # Confirmables (ventana abierta)
         seconds_left = max(int((end_window - now).total_seconds()), 0)
-        window_status = "open"
-        confirmable_now = True
-
-        items.append({
+        confirmable_items.append({
             "id": conf.id,
             "teacher_id": conf.teacher_id,
             "student_id": conf.student_id,
@@ -368,13 +383,15 @@ async def list_teacher_confirmations_recent(
             "booking_end": b_end,
             "confirmed_by_student": conf.confirmation_date_student,
             "confirmed_by_teacher": conf.confirmation_date_teacher,
-            "window_status": window_status,
-            "confirmable_now": confirmable_now,
+            "window_status": "open",
+            "confirmable_now": True,
             "seconds_left": seconds_left,
             "has_assessment_by_student": (conf.student_id in assessed_students),
         })
 
-    return items
+    # Ordenar próximas por inicio asc y concatenar
+    upcoming_items.sort(key=lambda x: x.get("booking_start") or now)
+    return confirmable_items + upcoming_items
 
 
 async def list_teacher_confirmations_all(
