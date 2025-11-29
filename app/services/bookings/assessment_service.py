@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert, select, func
+from sqlalchemy import insert, literal, select, func
 from datetime import datetime
 from fastapi import HTTPException, status
 
@@ -64,7 +64,7 @@ async def get_teacher_comments_service(db: AsyncSession, teacher_id: int, offset
             Assessment.comment,
             Assessment.qualification,
             User.id.label("student_id"),
-            func.concat(User.first_name, " ", User.last_name).label("student_name"),
+            (User.first_name + literal(" ") + User.last_name).label("student_name"),
             Assessment.created_at
         )
         .join(PaymentBooking, PaymentBooking.id == Assessment.payment_booking_id)
@@ -108,7 +108,7 @@ async def get_public_comments_service(
             Assessment.comment,
             Assessment.qualification,
             User.id.label("student_id"),
-            func.concat(User.first_name, " ", User.last_name).label("student_name"),
+            (User.first_name + literal(" ") + User.last_name).label("student_name"),
             Assessment.created_at
         )
         .join(User, User.id == Assessment.user_id)
@@ -145,7 +145,7 @@ async def get_student_comments_service(
             Assessment.comment,
             Assessment.qualification,
             User.id.label("student_id"),
-            func.concat(User.first_name, " ", User.last_name).label("student_name"),
+            (User.first_name + literal(" ") + User.last_name).label("student_name"),
             Assessment.created_at
         )
         .join(User, User.id == Assessment.user_id)
