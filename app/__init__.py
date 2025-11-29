@@ -87,6 +87,7 @@ from app.apis.confirm_student_api import router as confirm_student_router
 from app.apis.wallet_api import router as wallet_router
 from app.apis.foro_api import router as foro_router
 from app.apis.teachers_public_api import router as teachers_public_router
+from app.apis.user_api import router as user_router
 
 from app.apis.refund_api import router as refund_router
 
@@ -212,5 +213,8 @@ def create_app() -> FastAPI:
     app.include_router(public_videos_router, prefix="/api/public/videos", tags=["Public Videos"])
     app.include_router(common_router, prefix="/api", tags=["Common Resources"])
     app.include_router(activation_router, prefix="/api/activation", tags=["Activation"])
+    
+    # Importar y agregar el router de usuarios
+    app.include_router(user_router, prefix="/api/users", tags=["Users"])
     
     return app
