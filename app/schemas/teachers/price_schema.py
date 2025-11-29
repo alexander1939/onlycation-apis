@@ -40,3 +40,26 @@ class PriceAvailabilityResponse(BaseModel):
     success: bool
     message: str
     data: PriceAvailabilityData
+
+# ================= Update Price Schemas =================
+class PriceUpdateRequest(BaseModel):
+    """Payload para actualizar el precio base del docente.
+    - selected_prices: nuevo precio base por hora
+    - price_range_id: opcional, si cambia de rango (debe corresponder al mismo nivel educativo de su preferencia)
+    """
+    selected_prices: float
+    price_range_id: Optional[int] = None
+
+class PriceUpdateData(BaseModel):
+    id: int
+    preference_id: int
+    price_range_id: int
+    selected_prices: float
+    extra_hour_price: float
+    created_at: datetime
+    updated_at: datetime
+
+class PriceUpdateResponse(BaseModel):
+    success: bool
+    message: str
+    data: PriceUpdateData

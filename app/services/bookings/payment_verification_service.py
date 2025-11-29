@@ -62,13 +62,68 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
 
     # Multi-segmento: manejar bloques/segmentos y no leer start_time/end_time
     booking_mode = session.metadata.get("booking_mode", "single")
-    if booking_mode == "multi" or session.metadata.get("blocks"):
+    if booking_mode == "multi" or session.metadata.get("blocks") or session.metadata.get("segments"):
         try:
             blocks = json.loads(session.metadata.get("blocks", "[]"))
             # 'segments' puede no existir en el nuevo formato compacto; mantener opcional
             segments = json.loads(session.metadata.get("segments", "[]")) if session.metadata.get("segments") else []
         except Exception:
             raise HTTPException(status_code=400, detail="Metadata inválida para reservas múltiples")
+
+        # Si no vienen 'blocks' pero sí 'segments', agrupar segmentos contiguos en bloques
+        if (not blocks) and segments:
+            def _to_dt(val):
+                return datetime.fromisoformat(val) if isinstance(val, str) else val
+
+            # Ordenar por inicio
+            segs = []
+            for sg in segments:
+                sdt = _to_dt(sg.get("start_time"))
+                edt = _to_dt(sg.get("end_time"))
+                if sdt is None or edt is None:
+                    continue
+                segs.append({
+                    "start": sdt,
+                    "end": edt,
+                    "availability_id": int(sg.get("availability_id")) if sg.get("availability_id") is not None else None,
+                    "amount_cents": int(sg.get("amount_cents", 0))
+                })
+            segs.sort(key=lambda x: x["start"]) 
+
+            # Agrupar contiguos por disponibilidad y continuidad temporal
+            grouped = []
+            cur = None
+            for sg in segs:
+                if cur is None:
+                    cur = {
+                        "start": sg["start"],
+                        "end": sg["end"],
+                        "availability_id": sg["availability_id"],
+                        "amount_cents": sg["amount_cents"],
+                    }
+                    continue
+                # Contiguo si el inicio del siguiente == fin del actual y misma availability
+                if sg["availability_id"] == cur["availability_id"] and sg["start"] == cur["end"]:
+                    cur["end"] = sg["end"]
+                    cur["amount_cents"] += sg["amount_cents"]
+                else:
+                    grouped.append(cur)
+                    cur = {
+                        "start": sg["start"],
+                        "end": sg["end"],
+                        "availability_id": sg["availability_id"],
+                        "amount_cents": sg["amount_cents"],
+                    }
+            if cur is not None:
+                grouped.append(cur)
+
+            # Convertir a formato compacto de blocks {s,e,a,p}
+            blocks = [{
+                "s": g["start"].isoformat(),
+                "e": g["end"].isoformat(),
+                "a": g["availability_id"],
+                "p": g["amount_cents"],
+            } for g in grouped]
 
         if not blocks:
             raise HTTPException(status_code=400, detail="No hay bloques para crear reservas múltiples")
