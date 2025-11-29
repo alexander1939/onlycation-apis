@@ -57,6 +57,12 @@ async def get_public_comments(
 ):
     comments = await get_public_comments_service(db, teacher_id)
 
+    if not comments:
+        return TeacherCommentsListResponse(
+            success=True,
+            message="El docente no tiene comentarios aún",
+            data=[]
+        )
     return TeacherCommentsListResponse(
         success=True,
         message=f"Comentarios del docente {teacher_id} obtenidos correctamente (acceso público)",
