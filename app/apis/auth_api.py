@@ -75,6 +75,7 @@ async def login(request: Request, response: Response, login_data: LoginRequest, 
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
+            "user_id": user.id,
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
@@ -109,13 +110,21 @@ async def send_email_api(email: EmailSchema):
 
 @router.post("/refresh-token/")
 async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
-    access_token, payload = await refresh_access_token(db, request.token)
+    access_token, user, preference_id = await refresh_access_token(db, request.token)
     return {
         "success": True,
         "message": "Token renovado exitosamente",
         "data": {
             "access_token": access_token,
-            "token_type": "bearer"
+            "refresh_token": request.token,
+            "token_type": "bearer",
+            "user_id": user.id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.role.name if getattr(user, "role", None) else None,
+            "status": user.status.name if getattr(user, "status", None) else None,
+            "preference_id": preference_id,
         }
     }
 
