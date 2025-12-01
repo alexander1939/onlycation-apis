@@ -224,26 +224,27 @@ class ChatService:
                     Message.chat_id == chat.id,
                     Message.sender_id != user_id,
                     Message.is_read == False,
-                    Message.is_deleted == False
+                    Message.is_deleted == False,
                 )
+            )
+            
+            unread_result = await db.execute(unread_query)
+            unread_count = unread_result.scalar() or 0
                 
-                unread_result = await db.execute(unread_query)
-                unread_count = unread_result.scalar() or 0
+            # Crear resumen con la información del participante
+            summary = ChatSummaryResponse(
+                chat_id=chat.id,
+                student_id=chat.student_id,
+                teacher_id=chat.teacher_id,
+                participant=ParticipantResponse(**participant_info),
+                last_message=last_message_response,
+                unread_count=unread_count,
+                is_active=chat.is_active,
+                created_at=chat.created_at,
+                updated_at=chat.updated_at
+            )
                 
-                # Crear resumen con la información del participante
-                summary = ChatSummaryResponse(
-                    chat_id=chat.id,
-                    student_id=chat.student_id,
-                    teacher_id=chat.teacher_id,
-                    participant=ParticipantResponse(**participant_info),
-                    last_message=last_message_response,
-                    unread_count=unread_count,
-                    is_active=chat.is_active,
-                    created_at=chat.created_at,
-                    updated_at=chat.updated_at
-                )
-                
-                summaries.append(summary)
+            summaries.append(summary)
         
         return summaries
     
