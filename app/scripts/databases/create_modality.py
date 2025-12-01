@@ -24,10 +24,6 @@ async def create_modality():
             # Crear modalidades
             modalities_list = [
                 Modality(
-                    name="In-person",
-                    status_id=active_status.id
-                ),
-                Modality(
                     name="online",
                     status_id=active_status.id
                 )
