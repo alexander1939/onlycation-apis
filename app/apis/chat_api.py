@@ -126,16 +126,32 @@ async def get_chat_previews(
             user_role=current_user["role"]
         )
 
+        # Filtrar: solo chats que ya tienen al menos un mensaje
+        summaries_with_msg = [s for s in summaries if s.last_message is not None]
+
+        # Deduplicar por pareja (student_id, teacher_id), prefiriendo el más reciente por last_message_at
+        sorted_by_last = sorted(
+            summaries_with_msg,
+            key=lambda s: (s.last_message.created_at or s.updated_at),
+            reverse=True,
+        )
+        seen_pairs: set[tuple[int, int]] = set()
+        unique_summaries: list[ChatSummaryResponse] = []
+        for s in sorted_by_last:
+            pair = (min(s.student_id, s.teacher_id), max(s.student_id, s.teacher_id))
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            unique_summaries.append(s)
+
         previews: list[ChatPreview] = []
-        for s in summaries:
-            last_preview = s.last_message.content if s.last_message else None
-            last_at = s.last_message.created_at if s.last_message else None
+        for s in unique_summaries:
             previews.append(
                 ChatPreview(
                     chat_id=s.chat_id,
                     participant=s.participant,
-                    last_message_preview=last_preview,
-                    last_message_at=last_at,
+                    last_message_preview=s.last_message.content,
+                    last_message_at=s.last_message.created_at,
                     unread_count=s.unread_count,
                 )
             )
