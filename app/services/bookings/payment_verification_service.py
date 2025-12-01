@@ -285,23 +285,6 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
                 if bookings_objs:
                     t_user = bookings_objs[0].availability.user
                     teacher_name = f"{t_user.first_name} {t_user.last_name}" if t_user else "tu docente"
-                    lines = []
-                    for b in bookings_objs:
-                        lines.append(
-                            f"- {b.start_time.strftime('%d/%m/%Y %H:%M')} - {b.end_time.strftime('%H:%M')} | Link: {b.class_space or 'Por confirmar'}"
-                        )
-                    content = (
-                        f"Hola, soy {teacher_name}. Tu(s) reserva(s) fue(ron) confirmada(s) ✅\n\n"
-                        f"Detalles de la(s) clase(s):\n" + "\n".join(lines) + "\n\n"
-                        f"Cualquier duda, escríbeme por aquí."
-                    )
-                    await MessageService.send_message(
-                        db=db,
-                        chat_id=chat.id,
-                        sender_id=teacher_id,
-                        content=content,
-                        user_role="teacher",
-                    )
             except Exception:
                 # No bloquear si falla el mensaje automático
                 pass
