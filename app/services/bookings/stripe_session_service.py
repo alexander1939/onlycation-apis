@@ -5,6 +5,26 @@ from fastapi import HTTPException
 from datetime import datetime, timedelta, timezone
 import json
 
+# Helpers de normalización a hora local (MX, UTC-06) como datetime naive
+def _to_mx_local_naive(d: datetime | str) -> datetime:
+    """
+    Convierte un datetime o string ISO (con o sin 'Z') a hora local de MX (UTC-06) sin tz.
+    - Si el datetime es tz-aware, se convierte desde su tz a UTC y luego se resta 6h para obtener hora local.
+    - Si es naive, se asume ya en hora local MX y se deja igual.
+    """
+    if isinstance(d, str):
+        try:
+            d = datetime.fromisoformat(d.replace("Z", "+00:00"))
+        except Exception:
+            d = datetime.fromisoformat(d)
+    if getattr(d, "tzinfo", None) is not None:
+        d = d.astimezone(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)
+    return d
+
+def _now_mx_local() -> datetime:
+    """Devuelve 'ahora' en hora local de MX (UTC-06) como datetime naive."""
+    return datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)
+
 from app.models.teachers.availability import Availability
 from app.models.teachers.price import Price
 from app.models.users.user import User
@@ -22,22 +42,6 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
 
     if not disponibilidad:
         raise HTTPException(status_code=404, detail="Disponibilidad no encontrada")
-
-    # Helpers de normalización a hora local (MX, UTC-06) como datetime naive
-    def _to_mx_local_naive(d: datetime | str) -> datetime:
-        # Acepta str ISO (con o sin Z) o datetime (naive o tz-aware)
-        if isinstance(d, str):
-            try:
-                d = datetime.fromisoformat(d.replace("Z", "+00:00"))
-            except Exception:
-                d = datetime.fromisoformat(d)
-        if getattr(d, "tzinfo", None) is not None:
-            # Convertir a UTC y luego a hora local MX como naive
-            d = d.astimezone(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)
-        return d
-
-    def _now_mx_local() -> datetime:
-        return datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)
 
     # Modo MULTI-SEGMENTOS: si el request trae 'items', procesar varios tramos en una sola sesión
     if getattr(booking_data, "items", None):
