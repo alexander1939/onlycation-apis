@@ -246,16 +246,16 @@ async def update_price_by_token(
         raise ValueError("No tienes un precio registrado aún. Debes crearlo primero.")
 
     # Verificar cooldown de 30 días
-    last_change = price_obj.updated_at or price_obj.created_at
-    if not last_change:
-        # fallback defensivo: si no hay timestamps, bloquear
-        raise ValueError("No es posible actualizar el precio en este momento (timestamps inválidos)")
+    # last_change = price_obj.updated_at or price_obj.created_at
+    # if not last_change:
+    #     # fallback defensivo: si no hay timestamps, bloquear
+    #     raise ValueError("No es posible actualizar el precio en este momento (timestamps inválidos)")
     now = datetime.now(timezone.utc)
-    # Normalizar tz si fuera naive
-    if last_change.tzinfo is None:
-        last_change = last_change.replace(tzinfo=timezone.utc)
-    if (now - last_change) < timedelta(days=30):
-        raise ValueError("Solo puedes actualizar tu precio cada 30 días desde el último cambio")
+    # # Normalizar tz si fuera naive
+    # if last_change.tzinfo is None:
+    #     last_change = last_change.replace(tzinfo=timezone.utc)
+    # if (now - last_change) < timedelta(days=30):
+    #     raise ValueError("Solo puedes actualizar tu precio cada 30 días desde el último cambio")
 
     # Resolver rango objetivo: si no se envía, mantener el actual
     target_range_id = int(price_range_id) if price_range_id is not None else int(price_obj.price_range_id)

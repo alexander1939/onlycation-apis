@@ -154,9 +154,9 @@ async def update_price_route(
     """
     Actualiza el precio base del docente autenticado con las reglas:
     - No afecta reservas/pagos anteriores (solo actualiza el registro Price).
-    - Solo permite un cambio cada 30 días (usa `updated_at` para validar).
-    - Valida que el nuevo precio esté dentro del rango permitido y que el rango corresponda al nivel educativo.
+    - Valida que el nuevo precio esté dentro del rango permitido (desde BD) y que el rango corresponda al nivel educativo.
     - Recalcula `extra_hour_price = selected_prices / 2` automáticamente.
+    - Mapea a Stripe reusando `StripePrice` existente por monto (o creando producto/precio si no existe).
     """
     token = credentials.credentials
     try:
