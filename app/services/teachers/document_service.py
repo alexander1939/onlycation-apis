@@ -31,6 +31,12 @@ async def _validate_unique_rfc_hash(db: AsyncSession, rfc_hash: str):
 async def _validate_text_field(value: str, field_name: str):
     if not value or not value.strip():
         raise ValueError(f"El campo {field_name} es obligatorio")
+    
+    # Validación especial para RFC
+    if field_name.lower() == 'rfc':
+        from app.cores.security import validate_rfc
+        if not validate_rfc(value):
+            raise ValueError("El RFC no tiene un formato válido. Debe seguir el formato para persona física (13 caracteres) o moral (12 caracteres)")
 
 async def _validate_file(file: UploadFile, field_name: str):
     if not file:
