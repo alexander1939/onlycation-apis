@@ -57,18 +57,15 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
         confirmation_ids = [c.id for c in confs_result.scalars().all()]
         # Asegurar chat(s) entre alumno y docente(s) involucrados (idempotente)
         try:
-            from sqlalchemy.orm import joinedload
-            from app.models.booking.bookings import Booking as BookingModel
-            from app.models.teachers.availability import Availability as Av
             teacher_ids: set[int] = set()
             for pb in existing_payments:
                 bk = pb.booking
                 if not bk:
                     bk = (
                         await db.execute(
-                            select(BookingModel)
-                            .options(joinedload(BookingModel.availability))
-                            .where(BookingModel.id == pb.booking_id)
+                            select(Booking)
+                            .options(joinedload(Booking.availability))
+                            .where(Booking.id == pb.booking_id)
                         )
                     ).scalar_one_or_none()
                 if bk and getattr(bk, "availability", None):
@@ -276,7 +273,6 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
 
             # Enviar primer mensaje automático con detalles de las reservas (multi)
             try:
-                from sqlalchemy.orm import joinedload
                 # Cargar bookings creados con docente y links
                 bookings_rows = await db.execute(
                     select(Booking)
