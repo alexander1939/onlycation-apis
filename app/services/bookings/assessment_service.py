@@ -41,18 +41,20 @@ async def create_assessment(db: AsyncSession, user_id: int, payment_booking_id: 
             detail="Esta reserva ya ha sido evaluada."
         )
 
-    stmt = insert(Assessment).values(
+    # MySQL no soporta RETURNING en INSERT; usar ORM add/commit/refresh
+    new_assessment = Assessment(
         user_id=user_id,
         payment_booking_id=payment_booking_id,
         qualification=data.qualification,
         comment=data.comment,
         created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
-    ).returning(Assessment)
-
-    result = await db.execute(stmt)
+        updated_at=datetime.utcnow(),
+    )
+    db.add(new_assessment)
     await db.commit()
-    return result.scalar_one()
+    # Asegurar que los campos autogenerados estén presentes
+    await db.refresh(new_assessment)
+    return new_assessment
 
 
 
