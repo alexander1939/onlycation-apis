@@ -24,6 +24,8 @@ from app.services.notifications.booking_email_service import (
     send_new_booking_email_to_teacher
 )
 from app.services.bookings.room_service import generate_secure_room_link
+from app.services.chat.chat_service import ChatService
+from app.services.chat.message_service import MessageService
 
 async def get_active_status(db: AsyncSession):
     result = await db.execute(select(Status).where(Status.name == "active"))
@@ -53,6 +55,29 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
             select(Confirmation.id).where(Confirmation.payment_booking_id.in_(payment_ids))
         )
         confirmation_ids = [c.id for c in confs_result.scalars().all()]
+        # Asegurar chat(s) entre alumno y docente(s) involucrados (idempotente)
+        try:
+            from sqlalchemy.orm import joinedload
+            from app.models.booking.bookings import Booking as BookingModel
+            from app.models.teachers.availability import Availability as Av
+            teacher_ids: set[int] = set()
+            for pb in existing_payments:
+                bk = pb.booking
+                if not bk:
+                    bk = (
+                        await db.execute(
+                            select(BookingModel)
+                            .options(joinedload(BookingModel.availability))
+                            .where(BookingModel.id == pb.booking_id)
+                        )
+                    ).scalar_one_or_none()
+                if bk and getattr(bk, "availability", None):
+                    teacher_ids.add(bk.availability.user_id)
+            for tid in teacher_ids:
+                await ChatService.create_chat(db=db, student_id=user_id, teacher_id=tid)
+        except Exception:
+            # No bloquear el flujo si falla la creación del chat en idempotencia
+            pass
         return {
             "bookings": booking_ids,
             "payment_bookings": payment_ids,
@@ -245,6 +270,49 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
             created_payment_ids.append(payment_booking.id)
             created_confirmation_ids.append(confirmation.id)
 
+        # Asegurar chat entre alumno y docente
+        try:
+            chat = await ChatService.create_chat(db=db, student_id=user_id, teacher_id=teacher_id)
+
+            # Enviar primer mensaje automático con detalles de las reservas (multi)
+            try:
+                from sqlalchemy.orm import joinedload
+                # Cargar bookings creados con docente y links
+                bookings_rows = await db.execute(
+                    select(Booking)
+                    .options(joinedload(Booking.availability).joinedload(Availability.user))
+                    .where(Booking.id.in_(created_booking_ids))
+                )
+                bookings_objs = bookings_rows.scalars().all()
+                bookings_objs.sort(key=lambda b: b.start_time)
+
+                if bookings_objs:
+                    t_user = bookings_objs[0].availability.user
+                    teacher_name = f"{t_user.first_name} {t_user.last_name}" if t_user else "tu docente"
+                    lines = []
+                    for b in bookings_objs:
+                        lines.append(
+                            f"- {b.start_time.strftime('%d/%m/%Y %H:%M')} - {b.end_time.strftime('%H:%M')} | Link: {b.class_space or 'Por confirmar'}"
+                        )
+                    content = (
+                        f"Hola, soy {teacher_name}. Tu(s) reserva(s) fue(ron) confirmada(s) ✅\n\n"
+                        f"Detalles de la(s) clase(s):\n" + "\n".join(lines) + "\n\n"
+                        f"Cualquier duda, escríbeme por aquí."
+                    )
+                    await MessageService.send_message(
+                        db=db,
+                        chat_id=chat.id,
+                        sender_id=teacher_id,
+                        content=content,
+                        user_role="teacher",
+                    )
+            except Exception:
+                # No bloquear si falla el mensaje automático
+                pass
+        except Exception:
+            # No bloquear el flujo si falla la creación del chat
+            pass
+
         await db.commit()
         return {
             "bookings": created_booking_ids,
@@ -296,6 +364,7 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
 
     # Obtener datos del docente desde la relación ya cargada
     teacher_name = f"{booking.availability.user.first_name} {booking.availability.user.last_name}"
+    teacher_id_from_booking = booking.availability.user_id
 
     # Obtener datos de comisión desde metadata
     commission_rate = float(session.metadata.get("commission_rate", "60.00"))
@@ -361,6 +430,26 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
     await send_booking_confirmation_email(db, user_id, booking_details)
     await send_payment_confirmation_email(db, user_id, payment_details)
     await send_new_booking_email_to_teacher(db, teacher_id, booking_details)
+
+    # Asegurar chat entre alumno y docente y enviar primer mensaje automático (single)
+    try:
+        chat = await ChatService.create_chat(db=db, student_id=user_id, teacher_id=teacher_id_from_booking)
+        content = (
+            f"Hola, soy {teacher_name}. Tu reserva fue confirmada ✅\n\n"
+            f"Fecha y hora: {booking.start_time.strftime('%d/%m/%Y %H:%M')} - {booking.end_time.strftime('%H:%M')}\n"
+            f"Link de la clase: {booking.class_space or 'Por confirmar'}\n\n"
+            f"Cualquier duda, escríbeme por aquí."
+        )
+        await MessageService.send_message(
+            db=db,
+            chat_id=chat.id,
+            sender_id=teacher_id_from_booking,
+            content=content,
+            user_role="teacher",
+        )
+    except Exception:
+        # No bloquear el flujo si falla la creación del chat o el primer mensaje
+        pass
 
     await db.commit()
 
