@@ -1,11 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
 class AssessmentCreate(BaseModel):
     #payment_booking_id: int
-    qualification: int
-    comment: Optional[str] = None
+    qualification: int = Field(..., ge=1, le=5)
+    comment: Optional[str] = Field(None, max_length=255)
 
 class AssessmentResponse(BaseModel):
     id: int
@@ -30,7 +30,7 @@ class TeacherCommentResponse(BaseModel):
     qualification: Optional[int]
     student_id: int
     student_name: str
-    created_at: datetime  # 🔹 agregado
+    created_at: datetime  # 
 
     class Config:
         orm_mode = True
