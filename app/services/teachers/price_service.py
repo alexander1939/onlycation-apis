@@ -245,7 +245,7 @@ async def update_price_by_token(
     if not price_obj:
         raise ValueError("No tienes un precio registrado aún. Debes crearlo primero.")
 
-    # Verificar cooldown de 30 días
+    # Verificar cooldown de 30 días  
     # last_change = price_obj.updated_at or price_obj.created_at
     # if not last_change:
     #     # fallback defensivo: si no hay timestamps, bloquear
