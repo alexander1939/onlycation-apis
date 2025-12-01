@@ -416,7 +416,6 @@ async def verify_booking_payment_and_create_records(db: AsyncSession, session_id
         content = (
             f"Hola, soy {teacher_name}. Tu reserva fue confirmada ✅\n\n"
             f"Fecha y hora: {booking.start_time.strftime('%d/%m/%Y %H:%M')} - {booking.end_time.strftime('%H:%M')}\n"
-            f"Link de la clase: {booking.class_space or 'Por confirmar'}\n\n"
             f"Cualquier duda, escríbeme por aquí."
         )
         await MessageService.send_message(
