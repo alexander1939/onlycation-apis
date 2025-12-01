@@ -11,6 +11,7 @@ from app.models.teachers.video import Video
 from app.models.teachers.document import Document
 from app.models.common.status import Status
 from app.models.teachers.availability import Availability
+from app.services.wallets.wallet_service import WalletService
 
 
 async def _get_user_id_from_token(token: str) -> int:
@@ -41,10 +42,18 @@ async def check_teacher_activation_requirements(db: AsyncSession, token: str) ->
     price_q = await db.execute(select(Price).where(Price.user_id == user_id))
     has_price = price_q.scalars().first() is not None
 
-    # Wallet (stripe_account_id configurado)
+    # Wallet: refrescar estado en Stripe y exigir ACTIVA para cumplir requisito
     wallet_q = await db.execute(select(Wallet).where(Wallet.user_id == user_id))
     wallet = wallet_q.scalars().first()
-    has_wallet = wallet is not None and bool(wallet.stripe_account_id)
+    has_wallet = False
+    if wallet and wallet.stripe_account_id:
+        # Refrescar contra Stripe y persistir el estado
+        try:
+            wallet = await WalletService.check_stripe_account_status(db, user_id)
+        except Exception:
+            # Si Stripe falla, mantener evaluación conservadora (no activa)
+            pass
+        has_wallet = bool(wallet and wallet.stripe_bank_status == "active")
 
     # Availability (al menos un registro de disponibilidad)
     availability_q = await db.execute(select(Availability.id).where(Availability.user_id == user_id))
@@ -71,6 +80,18 @@ async def check_teacher_activation_requirements(db: AsyncSession, token: str) ->
         missing.append("video")
     if not has_documents:
         missing.append("documents")
+
+    # Auto-activar docente si cumple todos los requisitos
+    if not missing:
+        user_q = await db.execute(select(User).where(User.id == user_id))
+        user = user_q.scalar_one_or_none()
+        if user:
+            # Obtener status 'active' y aplicar si es diferente
+            status_q = await db.execute(select(Status).where(Status.name == "active"))
+            active_status = status_q.scalar_one_or_none()
+            if active_status and user.status_id != active_status.id:
+                user.status_id = active_status.id
+                await db.commit()
 
     return {
         "has_preference": has_preference,

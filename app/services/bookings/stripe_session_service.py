@@ -197,8 +197,8 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             "payment_method_types": ["card"],
             "line_items": line_items,
             "mode": "payment",
-            "success_url": "https://onlycation.com/catalog/teachers/?session_id={CHECKOUT_SESSION_ID}",
-            "cancel_url": "https://onlycation.com/",
+            "success_url": "http://localhost:5173/catalog/teachers/?session_id={CHECKOUT_SESSION_ID}",
+            "cancel_url": "http://localhost:5173",
             "customer_email": user.email,
             "metadata": {
                 "booking_mode": "multi",
