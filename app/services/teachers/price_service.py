@@ -33,19 +33,24 @@ async def _validate_unique_price(db: AsyncSession, user_id: int):
     if result.scalar_one_or_none():
         raise ValueError("Ya has registrado un precio previamente")
 
-def _validate_selected_price_within_range(selected_price: float, price_range_id: int):
-    ranges = {
-        1: (100, 800),    # preparatoria
-        2: (200, 1200),   # universidad
-        3: (300, 1500)    # posgrados
-    }
+async def _validate_selected_price_within_range(db: AsyncSession, selected_price: float, price_range_id: int):
+    """Valida contra la base de datos que el precio seleccionado esté dentro del rango (min/max)
+    configurado en la tabla PriceRange para el ID dado.
+    """
+    result = await db.execute(select(PriceRange).where(PriceRange.id == price_range_id))
+    price_range = result.scalar_one_or_none()
+    if not price_range:
+        raise ValueError("El rango de precios no existe")
 
-    if price_range_id not in ranges:
-        raise ValueError("Rango de precios no válido")
+    # Convertir a float para comparación simple (DB suele ser Decimal)
+    try:
+        min_price = float(price_range.minimum_price)
+        max_price = float(price_range.maximum_price)
+    except Exception:
+        raise ValueError("Rango de precios inválido en la base de datos")
 
-    min_price, max_price = ranges[price_range_id]
-    if not (min_price <= selected_price <= max_price):
-        raise ValueError(f"El precio debe estar entre ${min_price} y ${max_price} para este rango")
+    if not (min_price <= float(selected_price) <= max_price):
+        raise ValueError(f"El precio debe estar entre ${min_price:.2f} y ${max_price:.2f} para este rango")
 
 async def _validate_price_range_matches_educational_level(
     db: AsyncSession,
@@ -94,7 +99,7 @@ async def create_price_by_token(
     await _validate_price_range_exists(db, price_data.price_range_id)
     await _validate_preference_exists(db, price_data.preference_id, user_id)
     await _validate_price_range_matches_educational_level(db, price_data.price_range_id, price_data.preference_id)
-    _validate_selected_price_within_range(price_data.selected_prices, price_data.price_range_id)
+    await _validate_selected_price_within_range(db, price_data.selected_prices, price_data.price_range_id)
 
     # Calcular extra_hour_price automáticamente
     auto_extra_price = round(price_data.selected_prices / 2, 2)
@@ -258,7 +263,7 @@ async def update_price_by_token(
     # Validaciones: rango existe, corresponde al nivel educativo de su preferencia y precio dentro del rango
     await _validate_price_range_exists(db, target_range_id)
     await _validate_price_range_matches_educational_level(db, target_range_id, price_obj.preference_id)
-    _validate_selected_price_within_range(selected_prices, target_range_id)
+    await _validate_selected_price_within_range(db, selected_prices, target_range_id)
 
     # Calcular extra hour auto
     auto_extra_price = round(selected_prices / 2, 2)
