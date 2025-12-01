@@ -9,7 +9,11 @@ from app.cores.security import (
     rfc_hash_plain, encrypt_text, encrypt_bytes
 )
 
+import os
+
+# Asegurar que exista el directorio de uploads
 UPLOAD_DIR = "uploads/documents"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # -------- Validaciones --------
 
