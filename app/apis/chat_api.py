@@ -126,28 +126,27 @@ async def get_chat_previews(
             user_role=current_user["role"]
         )
 
-        # Filtrar: solo chats que ya tienen al menos un mensaje
-        summaries_with_msg = [s for s in summaries if s.last_message is not None]
-
-        # Filtrar: solo chats con una reserva ACTIVA (en curso o futura) entre alumno-docente
+        # Filtrar: SOLO chats con una reserva ACTIVA (en curso o futura) entre alumno-docente
         active_summaries: list[ChatSummaryResponse] = []
-        for s in summaries_with_msg:
+        for s in summaries:
             try:
                 if await ChatService.has_active_booking_between(db, s.student_id, s.teacher_id):
                     active_summaries.append(s)
             except Exception:
-                # Si falla la verificación, omitir silenciosamente para no romper la lista
                 continue
 
-        # Deduplicar por pareja (student_id, teacher_id), prefiriendo el más reciente por last_message_at
-        sorted_by_last = sorted(
-            active_summaries,
-            key=lambda s: (s.last_message.created_at or s.updated_at),
-            reverse=True,
-        )
+        # Deduplicar por pareja alumno-docente
+        # Preferir el que tiene último mensaje; si ambos/no hay, elegir el más reciente por (last_message_at or updated_at)
+        def sort_key(s: ChatSummaryResponse):
+            ts = s.last_message.created_at if s.last_message else s.updated_at
+            has_msg = 1 if s.last_message else 0
+            return (has_msg, ts)
+
+        sorted_by_pref = sorted(active_summaries, key=sort_key, reverse=True)
+
         seen_pairs: set[tuple[int, int]] = set()
         unique_summaries: list[ChatSummaryResponse] = []
-        for s in sorted_by_last:
+        for s in sorted_by_pref:
             pair = (min(s.student_id, s.teacher_id), max(s.student_id, s.teacher_id))
             if pair in seen_pairs:
                 continue
@@ -160,8 +159,8 @@ async def get_chat_previews(
                 ChatPreview(
                     chat_id=s.chat_id,
                     participant=s.participant,
-                    last_message_preview=s.last_message.content,
-                    last_message_at=s.last_message.created_at,
+                    last_message_preview=s.last_message.content if s.last_message else None,
+                    last_message_at=s.last_message.created_at if s.last_message else None,
                     unread_count=s.unread_count,
                 )
             )

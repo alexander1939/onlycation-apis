@@ -4,6 +4,7 @@ from sqlalchemy.future import select
 from sqlalchemy import and_, or_, desc, func
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from app.models.chat import Chat, Message
 from app.models.users.user import User
@@ -324,14 +325,15 @@ class ChatService:
     ) -> bool:
         """
         Verifica si existe una reserva ACTIVA (en curso o futura y no cancelada) entre el alumno y el docente.
-        - En curso o futura: Booking.end_time > ahora (UTC)
+        - En curso o futura: Booking.end_time > ahora (MX)
         - No cancelada: Booking.status != 'cancelled' (si existe el status)
         """
         # Buscar status cancelado (si existe)
         cancelled = (await db.execute(select(Status).where(Status.name == "cancelled"))).scalar_one_or_none()
         cancelled_id = cancelled.id if cancelled else None
 
-        now_utc = datetime.now(timezone.utc)
+        # Usar hora local de México para comparar con DATETIME de MySQL (sin tz)
+        now_mx = datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
 
         # Count de reservas que cumplan las condiciones
         q = (
@@ -340,7 +342,7 @@ class ChatService:
             .where(
                 Booking.user_id == student_id,
                 Availability.user_id == teacher_id,
-                Booking.end_time > now_utc,
+                Booking.end_time > now_mx,
             )
         )
         if cancelled_id is not None:
@@ -364,14 +366,15 @@ class ChatService:
         cancelled = (await db.execute(select(Status).where(Status.name == "cancelled"))).scalar_one_or_none()
         cancelled_id = cancelled.id if cancelled else None
 
-        now_utc = datetime.now(timezone.utc)
+        # Usar hora local de México para comparar con DATETIME de MySQL (sin tz)
+        now_mx = datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
 
         # Consultar reservas activas donde el usuario participa como alumno o docente
         q = (
             select(Booking, Availability.user_id.label("teacher_id"))
             .join(Availability, Booking.availability_id == Availability.id)
             .where(
-                Booking.end_time > now_utc,
+                Booking.end_time > now_mx,
                 or_(
                     Booking.user_id == user_id,          # alumno
                     Availability.user_id == user_id       # docente

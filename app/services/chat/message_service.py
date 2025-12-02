@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_, desc, func
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from app.models.chat import Chat, Message
 from app.models.users.user import User
@@ -57,17 +58,18 @@ class MessageService:
             raise ValueError("No eres participante de este chat")
         
         # Regla de negocio: solo permitir enviar mensajes si existe una reserva ACTIVA (en curso o futura) entre ambos
-        # Reserva activa: Booking.end_time > ahora (UTC) y status != cancelled
+        # Reserva activa: Booking.end_time > ahora (MX) y status != cancelled
         cancelled = (await db.execute(select(Status).where(Status.name == "cancelled"))).scalar_one_or_none()
         cancelled_id = cancelled.id if cancelled else None
-        now_utc = datetime.now(timezone.utc)
+        # Usar hora local de México y comparar sin tz (MySQL DATETIME suele ser naive)
+        now_mx = datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
         active_q = (
             select(func.count(Booking.id))
             .join(Availability, Booking.availability_id == Availability.id)
             .where(
                 Booking.user_id == chat.student_id,
                 Availability.user_id == chat.teacher_id,
-                Booking.end_time > now_utc,
+                Booking.end_time > now_mx,
             )
         )
         if cancelled_id is not None:
