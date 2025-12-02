@@ -27,7 +27,7 @@ class ChatService:
         """
         Crea (o recupera) un chat entre un estudiante y un profesor.
         - Reglas:
-          * Solo se permite crear si existe una reserva ACTIVA (futura y no cancelada) entre ambos.
+          * Solo se permite crear si existe una reserva ACTIVA (en curso o futura y no cancelada) entre ambos.
           * Si ya existe un chat ACTIVO entre estos usuarios, se devuelve ese chat (no se lanza error).
           * Si existe un chat inactivo, se reactiva.
         """
@@ -323,8 +323,8 @@ class ChatService:
         teacher_id: int,
     ) -> bool:
         """
-        Verifica si existe una reserva ACTIVA (futura y no cancelada) entre el alumno y el docente.
-        - Futura: Booking.start_time > ahora (UTC)
+        Verifica si existe una reserva ACTIVA (en curso o futura y no cancelada) entre el alumno y el docente.
+        - En curso o futura: Booking.end_time > ahora (UTC)
         - No cancelada: Booking.status != 'cancelled' (si existe el status)
         """
         # Buscar status cancelado (si existe)
@@ -340,7 +340,7 @@ class ChatService:
             .where(
                 Booking.user_id == student_id,
                 Availability.user_id == teacher_id,
-                Booking.start_time > now_utc,
+                Booking.end_time > now_utc,
             )
         )
         if cancelled_id is not None:
@@ -355,7 +355,7 @@ class ChatService:
         user_id: int,
     ) -> None:
         """Asegura (crea o reactiva) chats para TODAS las reservas activas del usuario.
-        "Reserva activa": Booking.start_time > ahora y Booking.status != 'cancelled' (si existe el status).
+        "Reserva activa": Booking.end_time > ahora y Booking.status != 'cancelled' (si existe el status).
         - Si el usuario es alumno en la reserva -> asegura chat (student=user_id, teacher=availability.user_id)
         - Si el usuario es docente en la reserva -> asegura chat (student=booking.user_id, teacher=user_id)
         Idempotente: si el chat ya existe activo, no hace nada; si existe inactivo, lo reactiva.
@@ -371,7 +371,7 @@ class ChatService:
             select(Booking, Availability.user_id.label("teacher_id"))
             .join(Availability, Booking.availability_id == Availability.id)
             .where(
-                Booking.start_time > now_utc,
+                Booking.end_time > now_utc,
                 or_(
                     Booking.user_id == user_id,          # alumno
                     Availability.user_id == user_id       # docente

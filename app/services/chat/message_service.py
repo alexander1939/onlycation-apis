@@ -9,6 +9,9 @@ from app.models.users.user import User
 from app.schemas.chat.chat_schema import MessageCreateRequest
 from app.services.encryption import EncryptionService
 from app.services.content_filter import ContentFilterService
+from app.models.booking.bookings import Booking
+from app.models.teachers.availability import Availability
+from app.models.common.status import Status
 
 
 class MessageService:
@@ -52,6 +55,26 @@ class MessageService:
         # Verificar que el remitente es participante del chat
         if chat.student_id != sender_id and chat.teacher_id != sender_id:
             raise ValueError("No eres participante de este chat")
+        
+        # Regla de negocio: solo permitir enviar mensajes si existe una reserva ACTIVA (en curso o futura) entre ambos
+        # Reserva activa: Booking.end_time > ahora (UTC) y status != cancelled
+        cancelled = (await db.execute(select(Status).where(Status.name == "cancelled"))).scalar_one_or_none()
+        cancelled_id = cancelled.id if cancelled else None
+        now_utc = datetime.now(timezone.utc)
+        active_q = (
+            select(func.count(Booking.id))
+            .join(Availability, Booking.availability_id == Availability.id)
+            .where(
+                Booking.user_id == chat.student_id,
+                Availability.user_id == chat.teacher_id,
+                Booking.end_time > now_utc,
+            )
+        )
+        if cancelled_id is not None:
+            active_q = active_q.where(Booking.status_id != cancelled_id)
+        active_count = (await db.execute(active_q)).scalar() or 0
+        if active_count == 0:
+            raise ValueError("No puedes enviar mensajes: no hay una reserva activa entre alumno y docente")
         
         # Filtrar contenido del mensaje
         content_filter = ContentFilterService()

@@ -11,8 +11,8 @@ from app.cores.security import (
 
 import os
 
-# Asegurar que exista el directorio de uploads
-UPLOAD_DIR = "uploads/documents"
+# Asegurar que exista el directorio de evidencias (persistente)
+UPLOAD_DIR = "evidence/documents"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # -------- Validaciones --------

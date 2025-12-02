@@ -129,9 +129,19 @@ async def get_chat_previews(
         # Filtrar: solo chats que ya tienen al menos un mensaje
         summaries_with_msg = [s for s in summaries if s.last_message is not None]
 
+        # Filtrar: solo chats con una reserva ACTIVA (en curso o futura) entre alumno-docente
+        active_summaries: list[ChatSummaryResponse] = []
+        for s in summaries_with_msg:
+            try:
+                if await ChatService.has_active_booking_between(db, s.student_id, s.teacher_id):
+                    active_summaries.append(s)
+            except Exception:
+                # Si falla la verificación, omitir silenciosamente para no romper la lista
+                continue
+
         # Deduplicar por pareja (student_id, teacher_id), prefiriendo el más reciente por last_message_at
         sorted_by_last = sorted(
-            summaries_with_msg,
+            active_summaries,
             key=lambda s: (s.last_message.created_at or s.updated_at),
             reverse=True,
         )
