@@ -34,8 +34,8 @@ def test_stripe_session_data():
             }
         ],
         "mode": "payment",
-        "success_url": "http://localhost:5173/?session_id={CHECKOUT_SESSION_ID}",
-        "cancel_url": "http://localhost:5173/",
+        "success_url": "https://onlycation.com/?session_id={CHECKOUT_SESSION_ID}",
+        "cancel_url": "https://onlycation.com/",
     }
     
     # Apply commission logic (FIXED VERSION)
@@ -72,8 +72,8 @@ def test_stripe_session_data():
             }
         ],
         "mode": "payment",
-        "success_url": "http://localhost:5173/?session_id={CHECKOUT_SESSION_ID}",
-        "cancel_url": "http://localhost:5173/",
+        "success_url": "https://onlycation.com/?session_id={CHECKOUT_SESSION_ID}",
+        "cancel_url": "https://onlycation.com",
     }
     
     # Apply no commission logic (FIXED VERSION)

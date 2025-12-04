@@ -77,13 +77,13 @@ async def login_user(db: AsyncSession, email: str, password: str):
 
         return access_token, refresh_token, user, preference_id
 
-    except HTTPException as e:
-        raise e
-    except Exception:
-        await unexpected_exception()
+    # except HTTPException as e:
+    #     raise e
+    # except Exception:
+    #     await unexpected_exception()
 
-    '''except Exception as e:
+    except Exception as e:
         import traceback
         print("ERROR:", e)
         traceback.print_exc()
-        raise e'''
+        raise e

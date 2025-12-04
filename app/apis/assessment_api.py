@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.apis.deps import auth_required, get_db, public_access
 from app.schemas.bookings.assessment_schema import (
-    AssessmentCreate, TeacherCommentsListResponse, TeacherCommentResponse
+    AssessmentCreate, AssessmentResponse, TeacherCommentsListResponse, TeacherCommentResponse
 )
 from app.services.bookings.assessment_service import (
     create_assessment,
@@ -19,13 +19,14 @@ from sqlalchemy import select, func
 router = APIRouter()
 
 # Crear assessment (requiere auth)
-@router.post("/create/{payment_booking_id}", response_model=AssessmentCreate, dependencies=[Depends(auth_required)])
+@router.post("/create/{payment_booking_id}", response_model=AssessmentResponse, dependencies=[Depends(auth_required)])
 async def add_assessment(
     payment_booking_id: int,
-    request: AssessmentCreate,
+    request: AssessmentCreate | None = None,
     db: AsyncSession = Depends(get_db),
     user_data: dict = Depends(auth_required)
 ):
+    # request puede ser None (cuerpo vacío). El servicio maneja None de forma segura.
     return await create_assessment(db, user_data["user_id"], payment_booking_id, request)
 
 
@@ -57,6 +58,12 @@ async def get_public_comments(
 ):
     comments = await get_public_comments_service(db, teacher_id)
 
+    if not comments:
+        return TeacherCommentsListResponse(
+            success=True,
+            message="El docente no tiene comentarios aún",
+            data=[]
+        )
     return TeacherCommentsListResponse(
         success=True,
         message=f"Comentarios del docente {teacher_id} obtenidos correctamente (acceso público)",

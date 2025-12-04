@@ -38,7 +38,7 @@ async def create_prices_range():
                         PriceRange(
                             educational_level_id=educational_levels["Preparatoria"],
                             minimum_price=100.00,
-                            maximum_price=800.00,
+                            maximum_price=450.00,
                             status_id=active_status.id
                         )
                     )
@@ -47,8 +47,8 @@ async def create_prices_range():
                     prices_ranges_list.append(
                         PriceRange(
                             educational_level_id=educational_levels["Universidad"],
-                            minimum_price=200.00,
-                            maximum_price=1200.00,
+                            minimum_price=400.00,
+                            maximum_price=750.00,
                             status_id=active_status.id
                         )
                     )
@@ -57,8 +57,8 @@ async def create_prices_range():
                     prices_ranges_list.append(
                         PriceRange(
                             educational_level_id=educational_levels["Posgrado"],
-                            minimum_price=300.00,
-                            maximum_price=1500.00,
+                            minimum_price=700.00,
+                            maximum_price=2000.00,
                          status_id=active_status.id
                         )
                     )

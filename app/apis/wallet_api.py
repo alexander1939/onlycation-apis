@@ -50,9 +50,18 @@ async def get_my_wallet(
     Obtener información completa de la cartera del docente autenticado.
     Incluye stripe_setup_url si está pendiente de configuración.
     """
-    wallet = await WalletService.get_wallet_by_user_id(db, user_data.get("user_id"))
+    user_id = user_data.get("user_id")
+    wallet = await WalletService.get_wallet_by_user_id(db, user_id)
     if not wallet:
         raise HTTPException(status_code=404, detail="Cartera no encontrada")
+    
+    # Refrescar estado contra Stripe si existe cuenta
+    if wallet.stripe_account_id:
+        try:
+            wallet = await WalletService.check_stripe_account_status(db, user_id)
+        except Exception:
+            # En caso de fallo con Stripe, continuamos con el último estado persistido
+            pass
     
     response_data = {
         "wallet_id": wallet.id,

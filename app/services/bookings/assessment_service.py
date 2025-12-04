@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert, select, func
+from sqlalchemy import insert, literal, select, func
 from datetime import datetime
 from fastapi import HTTPException, status
 
@@ -41,18 +41,20 @@ async def create_assessment(db: AsyncSession, user_id: int, payment_booking_id: 
             detail="Esta reserva ya ha sido evaluada."
         )
 
-    stmt = insert(Assessment).values(
+    # MySQL no soporta RETURNING en INSERT; usar ORM add/commit/refresh
+    new_assessment = Assessment(
         user_id=user_id,
         payment_booking_id=payment_booking_id,
         qualification=data.qualification,
         comment=data.comment,
         created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
-    ).returning(Assessment)
-
-    result = await db.execute(stmt)
+        updated_at=datetime.utcnow(),
+    )
+    db.add(new_assessment)
     await db.commit()
-    return result.scalar_one()
+    # Asegurar que los campos autogenerados estén presentes
+    await db.refresh(new_assessment)
+    return new_assessment
 
 
 
@@ -64,7 +66,7 @@ async def get_teacher_comments_service(db: AsyncSession, teacher_id: int, offset
             Assessment.comment,
             Assessment.qualification,
             User.id.label("student_id"),
-            func.concat(User.first_name, " ", User.last_name).label("student_name"),
+            (User.first_name + literal(" ") + User.last_name).label("student_name"),
             Assessment.created_at
         )
         .join(PaymentBooking, PaymentBooking.id == Assessment.payment_booking_id)
@@ -108,7 +110,7 @@ async def get_public_comments_service(
             Assessment.comment,
             Assessment.qualification,
             User.id.label("student_id"),
-            func.concat(User.first_name, " ", User.last_name).label("student_name"),
+            (User.first_name + literal(" ") + User.last_name).label("student_name"),
             Assessment.created_at
         )
         .join(User, User.id == Assessment.user_id)
@@ -145,7 +147,7 @@ async def get_student_comments_service(
             Assessment.comment,
             Assessment.qualification,
             User.id.label("student_id"),
-            func.concat(User.first_name, " ", User.last_name).label("student_name"),
+            (User.first_name + literal(" ") + User.last_name).label("student_name"),
             Assessment.created_at
         )
         .join(User, User.id == Assessment.user_id)

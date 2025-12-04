@@ -11,11 +11,15 @@ from app.schemas.teachers.price_schema import (
     PriceAvailabilityResponse,
     PriceAvailabilityData,
     PriceRangeItem,
+    PriceUpdateRequest,
+    PriceUpdateResponse,
+    PriceUpdateData,
 )
 from app.services.teachers.price_service import (
     create_price_by_token,
     get_prices_by_token,
     get_price_availability_by_token,
+    update_price_by_token,
 )
 from app.apis.deps import auth_required, get_db
 from app.cores.token import verify_token
@@ -140,3 +144,42 @@ async def get_my_hourly_price(
             "price": price.selected_prices
         }
     }
+
+@router.put("/update/", response_model=PriceUpdateResponse, dependencies=[Depends(auth_required)])
+async def update_price_route(
+    body: PriceUpdateRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Actualiza el precio base del docente autenticado con las reglas:
+    - No afecta reservas/pagos anteriores (solo actualiza el registro Price).
+    - Valida que el nuevo precio esté dentro del rango permitido (desde BD) y que el rango corresponda al nivel educativo.
+    - Recalcula `extra_hour_price = selected_prices / 2` automáticamente.
+    - Mapea a Stripe reusando `StripePrice` existente por monto (o creando producto/precio si no existe).
+    """
+    token = credentials.credentials
+    try:
+        updated = await update_price_by_token(
+            db,
+            token,
+            selected_prices=body.selected_prices,
+            price_range_id=body.price_range_id,
+        )
+        return PriceUpdateResponse(
+            success=True,
+            message="Precio actualizado exitosamente",
+            data=PriceUpdateData(
+                id=updated.id,
+                preference_id=updated.preference_id,
+                price_range_id=updated.price_range_id,
+                selected_prices=updated.selected_prices,
+                extra_hour_price=updated.extra_hour_price,
+                created_at=updated.created_at,
+                updated_at=updated.updated_at,
+            ),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SQLAlchemyError:
+        raise HTTPException(status_code=500, detail="Error en la base de datos al actualizar el precio")

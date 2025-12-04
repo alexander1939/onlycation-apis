@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.schemas.bookings.booking_shema import (
     BookingRequest, BookingPaymentResponse,
-    VerifyBookingPaymentResponse, RescheduleBookingRequest, RescheduleBookingResponse
+    VerifyBookingPaymentResponse, RescheduleBookingRequest, RescheduleBookingResponse,
+    BookingQuoteRequest, BookingQuoteResponse
 )
 from app.schemas.bookings.reschedule_request_schema import (
     TeacherRescheduleRequestCreate, StudentRescheduleResponse
 )
 from app.services.bookings.booking_service import get_user_by_token
-from app.services.bookings.stripe_session_service import create_booking_payment_session
+from app.services.bookings.stripe_session_service import create_booking_payment_session, calculate_booking_quote
 from app.services.bookings.payment_verification_service import verify_booking_payment_and_create_records
 from app.services.bookings.reschedule_service import reschedule_booking, get_available_slots_for_teacher
 from app.services.bookings.teacher_reschedule_service import (
@@ -29,6 +30,29 @@ from app.services.bookings.booking_detail_service import get_booking_detail_for_
 from app.schemas.bookings.booking_detail_schema import BookingDetailResponse, BookingDetailData, PersonInfo
 
 router = APIRouter()
+
+@router.post("/cotizar-booking/", response_model=BookingQuoteResponse)
+async def cotizar_booking(
+    request: BookingQuoteRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Cotización pública del precio de una reserva.
+    - Soporta múltiples segmentos (items) o una sola franja (single).
+    - Aplica la política global vigente: primeras 2 horas a precio base, desde la 3ra hora a precio de hora extra.
+    - No requiere autenticación.
+    """
+    try:
+        result = await calculate_booking_quote(db, request)
+        return {
+            "success": True,
+            "message": "Cotización calculada exitosamente",
+            "data": result,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al calcular cotización: {e}")
 
 @router.post("/crear-booking/", response_model=BookingPaymentResponse, dependencies=[Depends(auth_required)])
 async def crear_booking(
@@ -67,6 +91,7 @@ async def reagendar_booking(
     """
     Reagenda una reserva existente a un nuevo horario disponible del docente.
     Solo se puede reagendar hasta 30 minutos antes de la clase.
+    Soporta modo multi-hora enviando `items` (tramos contiguos por hora) tal como en BookingRequest.
     """
     booking_data = await reschedule_booking(
         db=db,
@@ -74,7 +99,8 @@ async def reagendar_booking(
         booking_id=request.booking_id,
         new_availability_id=request.new_availability_id,
         new_start_time=request.new_start_time,
-        new_end_time=request.new_end_time
+        new_end_time=request.new_end_time,
+        items=request.items,
     )
     
     return {

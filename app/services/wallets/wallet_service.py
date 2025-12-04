@@ -50,8 +50,8 @@ class WalletService:
                     # Crear nuevo enlace de configuración
                     account_link = stripe.AccountLink.create(
                         account=existing_wallet.stripe_account_id,
-                        return_url="http://localhost:5173/",  # Cambia por tu URL
-                        refresh_url="http://localhost:5173/", # Cambia por tu URL
+                        return_url="https://onlycation.com/",  # Cambia por tu URL
+                        refresh_url="https://onlycation.com/", # Cambia por tu URL
                         type='account_onboarding',
                     )
                     
@@ -80,8 +80,8 @@ class WalletService:
             # Crear enlace de configuración
             account_link = stripe.AccountLink.create(
                 account=stripe_account.id,
-                return_url="http://localhost:5173/",  # Cambia por tu URL
-                refresh_url="http://localhost:5173/", # Cambia por tu URL
+                return_url="https://onlycation.com/",  # Cambia por tu URL
+                refresh_url="https://onlycation.com/", # Cambia por tu URL
                 type='account_onboarding',
             )
             

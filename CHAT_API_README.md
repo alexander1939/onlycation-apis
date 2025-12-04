@@ -31,21 +31,50 @@ El sistema de chat permite a los **estudiantes** y **profesores** comunicarse de
 
 ### **1. Gestión de Chats**
 
-#### **POST** `/api/chat/chats/create`
-Crea un nuevo chat entre un estudiante y un profesor.
+#### **GET** `/api/chat/chats/previews`
+- Lista ligera de chats del usuario autenticado (estilo WhatsApp).
+- AUTO-ASEGURA chats antes de listar: crea o reactiva chats en base a tus reservas ACTIVAS (futuras y no canceladas). Con esto NO necesitas llamar a otra API para crear el chat: basta con abrir esta bandeja y ya aparecerán tus chats con quienes tienes reserva activa.
+- Solo incluye: nombre del otro participante, preview del último mensaje, fecha del último mensaje y contador de no leídos. No retorna el historial completo.
 
-**Solo estudiantes pueden crear chats.**
-
+**Respuesta exitosa:**
 ```json
 {
-  "teacher_id": 123
+  "success": true,
+  "message": "✅ 2 chat(s) encontrados",
+  "data": [
+    {
+      "chat_id": 1,
+      "participant": { "id": 123, "full_name": "Juan Pérez" },
+      "last_message_preview": "Perfecto, nos vemos a las 6",
+      "last_message_at": "2024-01-15T14:30:00Z",
+      "unread_count": 2
+    },
+    {
+      "chat_id": 2,
+      "participant": { "id": 999, "full_name": "María López" },
+      "last_message_preview": "Gracias!",
+      "last_message_at": "2024-01-15T13:10:00Z",
+      "unread_count": 0
+    }
+  ],
+  "total": 2
 }
+```
+
+#### **POST** `/api/chat/chats/ensure`
+- OPCIONAL: La mayoría de los casos ya quedan cubiertos por `GET /chats/previews` (que auto-asegura). Este endpoint sirve si el frontend quiere forzar abrir/crear un chat directo con `other_user_id` sin pasar por la bandeja.
+- "Asegura" un chat con otra persona. Si ya existe un chat activo entre ambos, lo devuelve; si hay uno inactivo, lo reactiva; si no existe, lo crea. Solo funciona si hay una reserva ACTIVA (futura y no cancelada) entre ambos.
+- Funciona para alumno y docente (detecta el rol automáticamente).
+
+**Body:**
+```json
+{ "other_user_id": 123 }
 ```
 
 **Respuesta exitosa:**
 ```json
 {
-  "id": 1,
+  "id": 10,
   "student_id": 456,
   "teacher_id": 123,
   "is_active": true,
@@ -191,6 +220,11 @@ Marca mensajes como leídos.
 #### **DELETE** `/api/chat/messages/{message_id}`
 Elimina un mensaje (soft delete - solo el remitente puede hacerlo).
 
+**Restricciones:**
+- Solo el REMITENTE puede eliminar su propio mensaje.
+- El mensaje debe estar NO LEÍDO.
+- Debe haberse enviado hace 10 minutos o menos.
+
 **Respuesta exitosa:**
 ```json
 {
@@ -200,6 +234,17 @@ Elimina un mensaje (soft delete - solo el remitente puede hacerlo).
     "deleted": true
   }
 }
+```
+
+**Respuestas de error (400):**
+```json
+{ "detail": "No puedes eliminar un mensaje que ya fue leído" }
+```
+```json
+{ "detail": "Solo puedes eliminar mensajes dentro de los primeros 10 minutos de enviados" }
+```
+```json
+{ "detail": "Solo puedes eliminar tus propios mensajes" }
 ```
 
 #### **GET** `/api/chat/messages/{chat_id}/unread-count`
@@ -219,12 +264,15 @@ Obtiene el número de mensajes no leídos en un chat.
 ## 🚨 **Códigos de Error Comunes**
 
 ### **400 Bad Request**
-- `❌ Ya existe un chat activo entre el estudiante X y el profesor Y`
+- `❌ Solo puedes chatear si tienes una reserva activa con este usuario`
 - `❌ No puedes crear un chat contigo mismo`
 - `❌ Chat no encontrado`
 - `❌ Este chat no está activo`
 - `❌ Este chat está bloqueado`
 - `❌ No eres participante de este chat`
+- `No puedes eliminar un mensaje que ya fue leído`
+- `Solo puedes eliminar mensajes dentro de los primeros 10 minutos de enviados`
+- `Solo puedes eliminar tus propios mensajes`
 
 ### **403 Forbidden**
 - `❌ Solo los estudiantes pueden crear chats con profesores`
@@ -250,7 +298,8 @@ Obtiene el número de mensajes no leídos en un chat.
 
 ## 🔄 **Flujo de Conversación Típico**
 
-1. **Estudiante** crea chat con profesor → `POST /api/chat/chats/create`
+1. **Abrir bandeja de chats**: `GET /api/chat/chats/previews` (auto-asegura chats de reservas activas y lista la bandeja).
+   - Opcional: si necesitas abrir uno directo por ID del otro usuario, usa `POST /api/chat/chats/ensure`.
 2. **Estudiante** envía primer mensaje → `POST /api/chat/messages/send`
 3. **Profesor** recibe notificación y responde → `POST /api/chat/messages/send`
 4. **Ambos** pueden ver historial → `GET /api/chat/messages/{chat_id}`

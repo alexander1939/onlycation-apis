@@ -13,10 +13,17 @@ from app.apis.deps import auth_required, get_db
 from app.schemas.students.confirm_students_schema import (
     StudentConfirmationCreateRequest,
     StudentConfirmationCreateResponse,
-    StudentConfirmationData
+    StudentConfirmationData,
+    StudentConfirmationRecentHistoryResponse,
+    StudentConfirmationAllHistoryResponse,
 )
 from app.services.students.confirm_students_service import create_confirmation_by_student
 from app.services.students.confirm_students_service import get_student_evidence
+from app.services.students.confirm_students_service import (
+    list_student_confirmations_recent,
+    list_student_confirmations_all,
+    list_student_confirmations_by_date,
+)
 from app.cores.file_validator import FileValidator
 
 security = HTTPBearer()
@@ -81,3 +88,62 @@ async def get_student_evidence_api(
             "Content-Disposition": f"inline; filename={filename}"
         }
     )
+
+
+@router.get(
+    "/student/history/recent",
+    response_model=StudentConfirmationRecentHistoryResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_student_recent_confirmations(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Devuelve SOLO confirmaciones confirmables para el alumno (clase terminada y ventana de 2h abierta),
+    ordenadas por más recientes.
+    """
+    token = credentials.credentials
+    items = await list_student_confirmations_recent(db, token)
+    return {"success": True, "items": items}
+
+
+@router.get(
+    "/student/history/all",
+    response_model=StudentConfirmationAllHistoryResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_student_all_confirmations(
+    offset: int = 0,
+    limit: int = 10,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista TODAS las confirmaciones del alumno (paginado con offset/limit)."""
+    token = credentials.credentials
+    data = await list_student_confirmations_all(db, token, offset=offset, limit=limit)
+    return {
+        "success": True,
+        "offset": data["offset"],
+        "limit": data["limit"],
+        "total": data["total"],
+        "has_more": data["has_more"],
+        "items": data["items"],
+    }
+
+
+@router.get(
+    "/student/history/by-date",
+    response_model=StudentConfirmationRecentHistoryResponse,
+    dependencies=[Depends(auth_required)]
+)
+async def get_student_confirmations_by_date(
+    date: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Filtra confirmaciones del alumno por fecha de booking (día completo).
+    Acepta formatos YYYY-MM-DD o DD/MM/YYYY. Usa zona America/Mexico_City para los límites del día.
+    """
+    token = credentials.credentials
+    items = await list_student_confirmations_by_date(db, token, date)
+    return {"success": True, "items": items}

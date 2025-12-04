@@ -2,12 +2,17 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_, desc, func
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from app.models.chat import Chat, Message
 from app.models.users.user import User
 from app.schemas.chat.chat_schema import MessageCreateRequest
 from app.services.encryption import EncryptionService
 from app.services.content_filter import ContentFilterService
+from app.models.booking.bookings import Booking
+from app.models.teachers.availability import Availability
+from app.models.common.status import Status
 
 
 class MessageService:
@@ -51,6 +56,27 @@ class MessageService:
         # Verificar que el remitente es participante del chat
         if chat.student_id != sender_id and chat.teacher_id != sender_id:
             raise ValueError("No eres participante de este chat")
+        
+        # Regla de negocio: solo permitir enviar mensajes si existe una reserva ACTIVA (en curso o futura) entre ambos
+        # Reserva activa: Booking.end_time > ahora (MX) y status != cancelled
+        cancelled = (await db.execute(select(Status).where(Status.name == "cancelled"))).scalar_one_or_none()
+        cancelled_id = cancelled.id if cancelled else None
+        # Usar hora local de México y comparar sin tz (MySQL DATETIME suele ser naive)
+        now_mx = datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
+        active_q = (
+            select(func.count(Booking.id))
+            .join(Availability, Booking.availability_id == Availability.id)
+            .where(
+                Booking.user_id == chat.student_id,
+                Availability.user_id == chat.teacher_id,
+                Booking.end_time > now_mx,
+            )
+        )
+        if cancelled_id is not None:
+            active_q = active_q.where(Booking.status_id != cancelled_id)
+        active_count = (await db.execute(active_q)).scalar() or 0
+        if active_count == 0:
+            raise ValueError("No puedes enviar mensajes: no hay una reserva activa entre alumno y docente")
         
         # Filtrar contenido del mensaje
         content_filter = ContentFilterService()
@@ -220,6 +246,23 @@ class MessageService:
         # Verificar que el usuario es el remitente del mensaje
         if message.sender_id != user_id:
             raise ValueError("Solo puedes eliminar tus propios mensajes")
+        
+        # Regla 1: No se puede eliminar si ya fue leído
+        if message.is_read:
+            raise ValueError("No puedes eliminar un mensaje que ya fue leído")
+        
+        # Regla 2: Ventana de 10 minutos desde la creación
+        now_utc = datetime.now(timezone.utc)
+        created_at = message.created_at
+        # Asegurar que ambas fechas sean timezone-aware
+        if created_at is None:
+            # Si por alguna razón no hay timestamp, no permitir eliminar
+            raise ValueError("No es posible eliminar este mensaje en este momento")
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        elapsed = now_utc - created_at
+        if elapsed > timedelta(minutes=10):
+            raise ValueError("Solo puedes eliminar mensajes dentro de los primeros 10 minutos de enviados")
         
         # Marcar como eliminado (soft delete)
         message.is_deleted = True

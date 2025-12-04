@@ -108,3 +108,24 @@ async def search_teachers_catalog(
             status_code=500,
             detail=f"Error al buscar docentes: {str(e)}"
         )
+
+@router.get("/teachers/{teacher_id}", response_model=TeacherSearchResponse.__annotations__['data'].__args__[0])
+async def get_public_teacher_profile_by_id(
+    teacher_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Obtener el perfil público consolidado de un docente por ID.
+    Retorna: user_id, first_name, last_name, educational_level, expertise_area,
+    price_per_hour, average_rating, video_embed_url, video_thumbnail_url.
+    """
+    try:
+        data = await PublicService.get_public_teacher_profile_by_id(db, teacher_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Docente no encontrado o inactivo")
+        # Reutilizamos el schema del resultado de búsqueda para un único docente
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error al obtener perfil público del docente")

@@ -88,6 +88,7 @@ from app.apis.confirm_student_api import router as confirm_student_router
 from app.apis.wallet_api import router as wallet_router
 from app.apis.foro_api import router as foro_router
 from app.apis.teachers_public_api import router as teachers_public_router
+from app.apis.user_api import router as user_router
 
 from app.apis.refund_api import router as refund_router
 
@@ -129,7 +130,7 @@ async def lifespan(app: FastAPI):
     await create_premium_plan()
     await create_free_plan()
     await create_benefit()
-    await crear_docente()  # Comentado: solo para testing, borra datos en cada inicio
+    #await crear_docente()  # Comentado: solo para testing, borra datos en cada inicio
     await create_categories()
 
     yield
@@ -166,6 +167,9 @@ def create_app() -> FastAPI:
     origins = [
         "http://localhost:5173/",
         "http://localhost:5173",
+        "http://localhost:4173/",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
         "https://onlycation.com",
         "https://onlycation.com/",
         "http://onlycation-frontend-8qopam-48445e-31-220-59-219.traefik.me",
@@ -213,5 +217,8 @@ def create_app() -> FastAPI:
     app.include_router(public_videos_router, prefix="/api/public/videos", tags=["Public Videos"])
     app.include_router(common_router, prefix="/api", tags=["Common Resources"])
     app.include_router(activation_router, prefix="/api/activation", tags=["Activation"])
+    
+    # Importar y agregar el router de usuarios
+    app.include_router(user_router, prefix="/api/users", tags=["Users"])
     
     return app
