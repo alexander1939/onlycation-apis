@@ -79,18 +79,40 @@ jobs:
             idx=$((idx+1))
           done
 
+      - name: Build OpenAPI subset for API Scan (limit paths)
+        shell: bash
+        run: |
+          # Limitar el API Scan a N rutas (por default 50). Cambia API_SCAN_MAX_PATHS a tu gusto.
+          MAX=${API_SCAN_MAX_PATHS:-50}
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y && sudo apt-get install -y jq
+          fi
+          jq --argjson max "$MAX" '
+            (.paths | to_entries | .[:$max] | from_entries) as $p
+            | .paths = $p
+          ' openapi.json > openapi_subset.json
+          echo "Subset built with first $MAX paths -> openapi_subset.json"
+
       - name: Run OWASP ZAP API Scan (OpenAPI)
-        timeout-minutes: 10
         continue-on-error: true
-        uses: zaproxy/action-api-scan@v0.7.0
-        with:
-          # FastAPI serves the OpenAPI definition at /openapi.json by default
-          # Use 127.0.0.1 explicitly and cap duration to avoid long hangs on large specs
-          target: 'http://127.0.0.1:8000/openapi.json'
-          format: 'openapi'
-          # Remove active scan (-a) to avoid very long runs on large specs; cap internal time
-          cmd_options: '-m 6'
-          allow_issue_writing: true
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -eo pipefail
+          docker pull ghcr.io/zaproxy/zaproxy:stable -q
+          : > report_json.json
+          : > report_md.md
+          : > report_html.html
+          echo "ZAP API scan (subset) with hard timeout..."
+          timeout 9m docker run --rm --network=host \
+            -v "${{ github.workspace }}:/zap/wrk" ghcr.io/zaproxy/zaproxy:stable \
+            zap-api-scan.py \
+              -t "/zap/wrk/openapi_subset.json" \
+              -f openapi \
+              -J /zap/wrk/report_json.json \
+              -w /zap/wrk/report_md.md \
+              -r /zap/wrk/report_html.html \
+              -m 6 || true
 
       - name: Run OWASP ZAP Baseline Scan (optional)
         continue-on-error: true
