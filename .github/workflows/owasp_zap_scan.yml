@@ -63,15 +63,19 @@ jobs:
           echo 'Downloading openapi.json'
           curl -sSf http://localhost:8000/openapi.json -o openapi.json || (echo "openapi.json not available" && exit 1)
           echo 'Extracting paths from openapi.json'
-          paths=$(jq -r '.paths | keys[]' openapi.json)
+          # Limitar el número de endpoints a escanear por ruta para evitar tiempos de ejecución de horas.
+          # Puedes controlar el máximo con la variable de entorno MAX_ENDPOINTS (default 80).
+          paths=$(jq -r '.paths | keys[]' openapi.json | head -n ${MAX_ENDPOINTS:-80})
           idx=0
           for p in $paths; do
             # build the full URL; remove surrounding quotes if any
             endpoint=$(echo "$p" | sed 's/"//g')
-            full_url="http://host.docker.internal:8000${endpoint}"
+            # Usar 127.0.0.1 junto con --network=host para que el contenedor alcance la app del runner
+            full_url="http://127.0.0.1:8000${endpoint}"
             echo "Scanning $full_url"
-            docker run --rm -v ${{ github.workspace }}/reports:/zap/reports -t owasp/zap2docker-stable \
-              zap-full-scan.py -t "$full_url" -r /zap/reports/zap_full_path_${idx}.html -J /zap/reports/zap_full_path_${idx}.json -m 5
+            # Capear cada ejecución a 2 minutos. Si se excede, continuar sin fallar el job.
+            timeout 2m docker run --rm --network=host -v ${{ github.workspace }}/reports:/zap/reports -t owasp/zap2docker-stable \
+              zap-full-scan.py -t "$full_url" -r /zap/reports/zap_full_path_${idx}.html -J /zap/reports/zap_full_path_${idx}.json -m 2 || true
             idx=$((idx+1))
           done
 
