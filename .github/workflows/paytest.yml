@@ -1,40 +1,24 @@
-name: Tests (Pytest) - Reusable
+name: Tests (Pytest)
 
 on:
-  workflow_call:
-    inputs:
-      environment:
-        required: false
-        type: string
-        default: 'ci'
-      python_version:
-        required: false
-        type: string
-        default: '3.11'
-    outputs:
-      test_result:
-        description: "Resultado de las pruebas"
-        value: ${{ jobs.test.outputs.test_result }}
-      coverage_percentage:
-        description: "Porcentaje de cobertura"
-        value: ${{ jobs.test.outputs.coverage_percentage }}
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    name: Run Pytest Tests
-    outputs:
-      test_result: ${{ steps.test-result.outputs.result }}
-      coverage_percentage: ${{ steps.coverage.outputs.percentage }}
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ inputs.python_version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ inputs.python_version }}
+          python-version: '3.11'
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -48,7 +32,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest pytest-cov pytest-xdist cryptography
+          # Useful extras for CI
+          pip install pytest pytest-cov cryptography
 
       - name: Create .env for CI (SQLite) with valid Fernet key
         run: |
@@ -61,7 +46,7 @@ jobs:
           cat > .env << EOF
           SQLALCHEMY_DATABASE_URI=sqlite:///test.db
           SQLALCHEMY_TRACK_MODIFICATIONS=False
-          SECRET_KEY=ci_test_secret_key_${{ github.run_id }}
+          SECRET_KEY=ci_test_secret_key
           MAIL_USERNAME=test@example.com
           MAIL_PASSWORD=dummy
           MAIL_FROM=test@example.com
@@ -77,89 +62,33 @@ jobs:
           STRIPE_SECRET_KEY=sk_test_dummy
           STRIPE_PUBLIC_KEY=pk_test_dummy
           DOC_CIPHER_KEY=dummy_cipher_key
+          # Both names to satisfy any import sites
           EVIDENCE_KEY=$FERNET_KEY
           EVIDENCE_ENCRYPTION_KEY=$FERNET_KEY
           YOUTUBE_API_KEY=
           LINKEDIN_CLIENT_ID=
           LINKEDIN_CLIENT_SECRET=
           LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/linkedin/callback
-          ENVIRONMENT=${{ inputs.environment }}
           EOF
           echo "Created .env for CI (keys redacted):"
           cat .env | sed 's/^\(.*PASSWORD\|.*SECRET\|.*KEY\)=.*/\1=***REDACTED***/'
 
       - name: Run pytest with coverage
-        id: run-tests
         env:
+          # Ensure local .env is used by pydantic-settings
           Pydantic_env_file: .env
         run: |
-          set +e  # Don't fail immediately
-          
-          # Run tests and capture output
-          pytest_output=$(pytest -v --maxfail=1 --disable-warnings \
+          pytest -v --maxfail=1 --disable-warnings \
             --cov=app --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
-            --junitxml=pytest-junit.xml 2>&1)
-          
-          test_exit_code=$?
-          
-          # Extract coverage percentage
-          coverage_line=$(echo "$pytest_output" | grep "TOTAL" | tail -1)
-          if [ -n "$coverage_line" ]; then
-            coverage_pct=$(echo "$coverage_line" | grep -oP '\d+(?=%)' | tail -1)
-            echo "percentage=$coverage_pct" >> $GITHUB_OUTPUT
-            echo "Coverage: $coverage_pct%"
-          else
-            echo "percentage=0" >> $GITHUB_OUTPUT
-          fi
-          
-          # Save test result
-          if [ $test_exit_code -eq 0 ]; then
-            echo "result=success" >> $GITHUB_OUTPUT
-          else
-            echo "result=failed" >> $GITHUB_OUTPUT
-          fi
-          
-          # Show test summary
-          echo "Test exit code: $test_exit_code"
-          echo "Test output last lines:"
-          echo "$pytest_output" | tail -20
-          
-          exit $test_exit_code
+            --junitxml=pytest-junit.xml
 
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-reports-${{ github.run_id }}
+          name: pytest-reports
           path: |
             coverage.xml
             pytest-junit.xml
             .coverage
-
-      - name: Set test result output
-        id: test-result
-        if: always()
-        run: |
-          if [ ${{ steps.run-tests.outcome }} == 'success' ]; then
-            echo "result=success" >> $GITHUB_OUTPUT
-          else
-            echo "result=failed" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set coverage output
-        id: coverage
-        if: always()
-        run: |
-          # Try to extract coverage from XML if available
-          if [ -f coverage.xml ]; then
-            cov_line=$(grep -o 'line-rate="[^"]*"' coverage.xml | head -1 | sed 's/line-rate="//' | sed 's/"//')
-            if [ -n "$cov_line" ]; then
-              cov_pct=$(echo "$cov_line * 100" | bc | cut -d. -f1)
-              echo "percentage=$cov_pct" >> $GITHUB_OUTPUT
-            else
-              echo "percentage=0" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "percentage=0" >> $GITHUB_OUTPUT
-          fi

@@ -1,99 +1,36 @@
-name: OWASP ZAP Security Scan - Reusable
+name: OWASP ZAP Security Scan (FastAPI)
 
 on:
-  workflow_call:
-    inputs:
-      scan_type:
-        required: false
-        type: string
-        default: 'baseline'  # 'baseline', 'full', or 'both'
-      scan_timeout:
-        required: false
-        type: number
-        default: 10
-      port:
-        required: false
-        type: number
-        default: 8000
-    secrets:
-      SQLALCHEMY_DATABASE_URI:
-        required: true
-      SQLALCHEMY_TRACK_MODIFICATIONS:
-        required: false
-      SECRET_KEY:
-        required: true
-      MAIL_USERNAME:
-        required: false
-      MAIL_PASSWORD:
-        required: false
-      MAIL_FROM:
-        required: false
-      MAIL_PORT:
-        required: false
-      MAIL_SERVER:
-        required: false
-      MAIL_STARTTLS:
-        required: false
-      MAIL_SSL_TLS:
-        required: false
-      ADMIN_EMAIL:
-        required: false
-      ADMIN_PASSWORD:
-        required: false
-      ADMIN_FIRST_NAME:
-        required: false
-      ADMIN_LAST_NAME:
-        required: false
-      ADMIN_ROLE:
-        required: false
-      STRIPE_SECRET_KEY:
-        required: false
-      STRIPE_PUBLIC_KEY:
-        required: false
-      DOC_CIPHER_KEY:
-        required: false
-      EVIDENCE_ENCRYPTION_KEY:
-        required: false
-      YOUTUBE_API_KEY:
-        required: false
-
-    outputs:
-      scan_result:
-        description: "Resultado del escaneo de seguridad"
-        value: ${{ jobs.zap_scan.outputs.scan_result }}
-      vulnerabilities_found:
-        description: "Número de vulnerabilidades encontradas"
-        value: ${{ jobs.zap_scan.outputs.vulnerabilities_found }}
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
-    name: OWASP ZAP Security Scan
-    outputs:
-      scan_result: ${{ steps.scan-result.outputs.result }}
-      vulnerabilities_found: ${{ steps.vuln-count.outputs.count }}
-    
     env:
       SQLALCHEMY_DATABASE_URI: ${{ secrets.SQLALCHEMY_DATABASE_URI }}
-      SQLALCHEMY_TRACK_MODIFICATIONS: ${{ secrets.SQLALCHEMY_TRACK_MODIFICATIONS || 'False' }}
+      SQLALCHEMY_TRACK_MODIFICATIONS: ${{ secrets.SQLALCHEMY_TRACK_MODIFICATIONS }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
-      MAIL_USERNAME: ${{ secrets.MAIL_USERNAME || '' }}
-      MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD || '' }}
-      MAIL_FROM: ${{ secrets.MAIL_FROM || '' }}
-      MAIL_PORT: ${{ secrets.MAIL_PORT || '587' }}
-      MAIL_SERVER: ${{ secrets.MAIL_SERVER || '' }}
-      MAIL_STARTTLS: ${{ secrets.MAIL_STARTTLS || 'True' }}
-      MAIL_SSL_TLS: ${{ secrets.MAIL_SSL_TLS || 'False' }}
-      ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL || '' }}
-      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || '' }}
-      ADMIN_FIRST_NAME: ${{ secrets.ADMIN_FIRST_NAME || '' }}
-      ADMIN_LAST_NAME: ${{ secrets.ADMIN_LAST_NAME || '' }}
-      ADMIN_ROLE: ${{ secrets.ADMIN_ROLE || '' }}
-      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY || '' }}
-      STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY || '' }}
-      DOC_CIPHER_KEY: ${{ secrets.DOC_CIPHER_KEY || '' }}
-      EVIDENCE_ENCRYPTION_KEY: ${{ secrets.EVIDENCE_ENCRYPTION_KEY || '' }}
-      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY || '' }}
+      MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+      MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      MAIL_PORT: ${{ secrets.MAIL_PORT }}
+      MAIL_SERVER: ${{ secrets.MAIL_SERVER }}
+      MAIL_STARTTLS: ${{ secrets.MAIL_STARTTLS }}
+      MAIL_SSL_TLS: ${{ secrets.MAIL_SSL_TLS }}
+      ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      ADMIN_FIRST_NAME: ${{ secrets.ADMIN_FIRST_NAME }}
+      ADMIN_LAST_NAME: ${{ secrets.ADMIN_LAST_NAME }}
+      ADMIN_ROLE: ${{ secrets.ADMIN_ROLE }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY }}
+      DOC_CIPHER_KEY: ${{ secrets.DOC_CIPHER_KEY }}
+      EVIDENCE_ENCRYPTION_KEY: ${{ secrets.EVIDENCE_ENCRYPTION_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
 
     steps:
       - name: Checkout repository
@@ -109,165 +46,76 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install uvicorn
-          # Install Docker for ZAP scans
-          sudo apt-get update
-          sudo apt-get install -y docker.io jq curl
 
       - name: Start FastAPI app
         run: |
-          echo "🚀 Iniciando aplicación FastAPI en puerto ${{ inputs.port }}..."
-          nohup uvicorn app.main:app --host 0.0.0.0 --port ${{ inputs.port }} > app.log 2>&1 &
-          echo "Esperando que la aplicación esté lista..."
-          
-          # Wait for app to start
-          for i in {1..30}; do
-            if curl -sSf http://localhost:${{ inputs.port }}/docs > /dev/null 2>&1; then
-              echo "✅ Aplicación lista en http://localhost:${{ inputs.port }}"
-              curl -s http://localhost:${{ inputs.port }}/openapi.json | jq '.info' || true
-              break
-            fi
-            echo "Intento $i/30: Esperando aplicación..."
-            sleep 2
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          # Give the app more time to warm up and run DB seeds/migrations if any
+          sleep 25
+          curl -sSf http://localhost:8000/openapi.json > /dev/null || (echo "OpenAPI not reachable" && exit 1)
+
+      - name: Discover endpoints and run ZAP full-scan per path
+        continue-on-error: true
+        run: |
+          mkdir -p reports
+          # install jq to parse openapi.json
+          sudo apt-get update -y && sudo apt-get install -y jq
+          echo 'Downloading openapi.json'
+          curl -sSf http://localhost:8000/openapi.json -o openapi.json || (echo "openapi.json not available" && exit 1)
+          echo 'Extracting paths from openapi.json'
+          paths=$(jq -r '.paths | keys[]' openapi.json)
+          idx=0
+          for p in $paths; do
+            # build the full URL; remove surrounding quotes if any
+            endpoint=$(echo "$p" | sed 's/"//g')
+            full_url="http://host.docker.internal:8000${endpoint}"
+            echo "Scanning $full_url"
+            docker run --rm -v ${{ github.workspace }}/reports:/zap/reports -t owasp/zap2docker-stable \
+              zap-full-scan.py -t "$full_url" -r /zap/reports/zap_full_path_${idx}.html -J /zap/reports/zap_full_path_${idx}.json -m 5
+            idx=$((idx+1))
           done
-          
-          # Check if app is running
-          if ! curl -sSf http://localhost:${{ inputs.port }}/docs > /dev/null 2>&1; then
-            echo "❌ No se pudo iniciar la aplicación"
-            cat app.log
-            exit 1
-          fi
 
-      - name: Create reports directory
-        run: mkdir -p zap-reports
+      - name: Run OWASP ZAP API Scan (OpenAPI)
+        continue-on-error: true
+        uses: zaproxy/action-api-scan@v0.7.0
+        with:
+          # FastAPI serves the OpenAPI definition at /openapi.json by default
+          target: 'http://localhost:8000/openapi.json'
+          cmd_options: '-a'
+          allow_issue_writing: true
 
-      - name: Run OWASP ZAP Baseline Scan
-        id: zap-baseline
-        if: ${{ inputs.scan_type == 'baseline' || inputs.scan_type == 'both' }}
+      - name: Run OWASP ZAP Baseline Scan (optional)
         continue-on-error: true
         uses: zaproxy/action-baseline@v0.15.0
         with:
-          target: 'http://localhost:${{ inputs.port }}'
-          cmd_options: '-r zap_baseline_report.html -J zap_baseline_report.json -m ${{ inputs.scan_timeout }}'
+          target: 'http://localhost:8000'
+          # Generate both HTML and JSON reports and allow writing issues.
+          # Increase scanning strength if you want deeper checks (use -m for max duration minutes).
+          cmd_options: '-r zap_baseline_report.html -J zap_baseline_report.json -m 5'
           allow_issue_writing: true
-          artifact_name: zap-baseline-reports-${{ github.run_id }}
 
-      - name: Run OWASP ZAP Full Scan
-        id: zap-full
-        if: ${{ inputs.scan_type == 'full' || inputs.scan_type == 'both' }}
+      - name: Run OWASP ZAP Full Scan (spider + active)
         continue-on-error: true
+        # Use the official ZAP Docker image to run the full scan (spider + active scanning)
         run: |
-          echo "🔍 Ejecutando escaneo completo ZAP..."
-          docker run --rm \
-            -v $(pwd)/zap-reports:/zap/reports \
-            -t owasp/zap2docker-stable \
-            zap-full-scan.py \
-            -t http://host.docker.internal:${{ inputs.port }} \
-            -r /zap/reports/zap_full_report.html \
-            -J /zap/reports/zap_full_report.json \
-            -m ${{ inputs.scan_timeout }} \
-            -z "-config scanner.attackOnStart=true -config api.disablekey=true"
-          
-          echo "✅ Escaneo completo completado"
+          mkdir -p reports
+          # Run zap-full-scan.py inside the Docker image, mount the reports folder to collect results.
+          docker run --rm -v ${{ github.workspace }}/reports:/zap/reports -t owasp/zap2docker-stable \
+            zap-full-scan.py -t http://localhost:8000 -r /zap/reports/zap_full_report.html -J /zap/reports/zap_full_report.json -m 10 -z "-config scanner.attackOnStart=true"
+          # Note: -m sets max duration in minutes for the passive/active scan. Adjust as needed.
 
-      - name: Discover and scan individual endpoints
-        id: zap-endpoints
-        if: ${{ inputs.scan_type == 'full' }}
-        continue-on-error: true
-        run: |
-          echo "🔍 Descubriendo y escaneando endpoints individuales..."
-          mkdir -p zap-reports/endpoints
-          
-          # Download OpenAPI spec
-          curl -sSf http://localhost:${{ inputs.port }}/openapi.json -o openapi.json
-          
-          # Install jq if not present
-          command -v jq || sudo apt-get install -y jq
-          
-          # Extract paths
-          paths=$(jq -r '.paths | keys[]' openapi.json | head -20)  # Limit to first 20 endpoints
-          
-          idx=0
-          for path in $paths; do
-            endpoint=$(echo "$path" | sed 's/"//g')
-            if [[ ! $endpoint =~ \{\} ]]; then  # Skip endpoints with path parameters for now
-              full_url="http://host.docker.internal:${{ inputs.port }}${endpoint}"
-              echo "Escaneando: $full_url"
-              
-              docker run --rm \
-                -v $(pwd)/zap-reports/endpoints:/zap/reports \
-                -t owasp/zap2docker-stable \
-                zap-baseline.py \
-                -t "$full_url" \
-                -r /zap/reports/zap_endpoint_${idx}.html \
-                -J /zap/reports/zap_endpoint_${idx}.json \
-                -m 2
-              
-              idx=$((idx+1))
-            fi
-          done
-          
-          echo "✅ Escaneados $idx endpoints"
-
-      - name: Analyze scan results
-        id: analyze-results
+      - name: Save ZAP report locally
         if: always()
         run: |
-          echo "📊 Analizando resultados del escaneo..."
-          
-          vuln_count=0
-          
-          # Check baseline report
-          if [ -f zap-reports/zap_baseline_report.json ]; then
-            count=$(jq '[.site[]?.alerts[]?.riskcode] | map(select(. == "3" or . == "2")) | length' zap-reports/zap_baseline_report.json 2>/dev/null || echo "0")
-            vuln_count=$((vuln_count + count))
-            echo "Vulnerabilidades en baseline: $count"
-          fi
-          
-          # Check full report
-          if [ -f zap-reports/zap_full_report.json ]; then
-            count=$(jq '[.site[]?.alerts[]?.riskcode] | map(select(. == "3" or . == "2")) | length' zap-reports/zap_full_report.json 2>/dev/null || echo "0")
-            vuln_count=$((vuln_count + count))
-            echo "Vulnerabilidades en full scan: $count"
-          fi
-          
-          echo "count=$vuln_count" >> $GITHUB_OUTPUT
-          echo "🔍 Total de vulnerabilidades encontradas: $vuln_count"
-          
-          if [ $vuln_count -eq 0 ]; then
-            echo "result=success" >> $GITHUB_OUTPUT
-          elif [ $vuln_count -lt 5 ]; then
-            echo "result=warning" >> $GITHUB_OUTPUT
-          else
-            echo "result=failed" >> $GITHUB_OUTPUT
-          fi
+          mkdir -p reports
+          # Copy any ZAP reports that were generated
+          cp -n *.html reports/ 2>/dev/null || echo "No HTML reports found"
+          cp -n *.json reports/ 2>/dev/null || true
+          ls -la reports
 
       - name: Upload ZAP reports artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-security-reports-${{ github.run_id }}
-          path: |
-            zap-reports/
-            app.log
-          retention-days: 7
-
-      - name: Set scan result output
-        id: scan-result
-        if: always()
-        run: |
-          if [ -f zap-reports/zap_baseline_report.json ] || [ -f zap-reports/zap_full_report.json ]; then
-            echo "result=completed" >> $GITHUB_OUTPUT
-          else
-            echo "result=failed" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set vulnerability count
-        id: vuln-count
-        if: always()
-        run: |
-          count=0
-          if [ -f zap-reports/zap_baseline_report.json ]; then
-            c=$(jq '[.site[]?.alerts[]?.riskcode] | map(select(. == "3" or . == "2")) | length' zap-reports/zap_baseline_report.json 2>/dev/null || echo "0")
-            count=$((count + c))
-          fi
-          echo "count=$count" >> $GITHUB_OUTPUT
+          name: zapreports
+          path: reports
