@@ -3,7 +3,7 @@ Este bloque define la configuración de inicio (lifespan) y creación de la apli
 Incluye tareas que deben ejecutarse al arrancar la aplicación, como la creación de tablas y datos iniciales.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from app.cores.db import Base, engine
@@ -105,6 +105,7 @@ profanity.load_censor_words()
 from app.apis.videos_api import router as videos_router
 from app.apis.chat_api import router as chat_router
 from app.apis.activate_account_api import router as activation_router
+from prometheus_client import Counter, generate_latest
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -183,6 +184,27 @@ def create_app() -> FastAPI:
     @app.get("/")
     def root():
         return {"status": "ok"}
+
+    # Métricas de Prometheus: contador global de solicitudes a la API
+    requests_counter = Counter(
+        "onlycation_requests_total",
+        "Número total de solicitudes recibidas por la API onlyCation",
+    )
+
+    @app.middleware("http")
+    async def prometheus_request_counter(request: Request, call_next):
+        # Solo contar solicitudes a las rutas de la API (prefijo /api)
+        # y evitar contar el propio endpoint /metrics
+        path = request.url.path
+        if path.startswith("/api"):
+            requests_counter.inc()
+        response = await call_next(request)
+        return response
+
+    @app.get("/metrics")
+    async def metrics() -> Response:
+        data = generate_latest()
+        return Response(content=data, media_type="text/plain; version=0.0.4; charset=utf-8")
 
     # Agrega el router de autenticación con un prefijo y una etiqueta
     app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
