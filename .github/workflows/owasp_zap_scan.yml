@@ -80,8 +80,9 @@ jobs:
         uses: zaproxy/action-api-scan@v0.7.0
         with:
           # FastAPI serves the OpenAPI definition at /openapi.json by default
-          target: 'http://localhost:8000/openapi.json'
-          cmd_options: '-a'
+          # Use 127.0.0.1 explicitly and cap duration to avoid long hangs on large specs
+          target: 'http://127.0.0.1:8000/openapi.json'
+          cmd_options: '-a -m 12'
           allow_issue_writing: true
 
       - name: Run OWASP ZAP Baseline Scan (optional)
