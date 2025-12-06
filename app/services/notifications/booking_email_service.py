@@ -728,10 +728,9 @@ async def send_refund_processed_email(
         logger.error(f"❌ Error enviando email de reembolso procesado: {str(e)}")
         return False
 
-"""
 async def send_teacher_confirmation_email(db: AsyncSession, student_id: int, payment_booking_id: int):
     try:
-        # Buscar al estudiante
+        # Buscar al estudiante destinatario
         result = await db.execute(select(User).where(User.id == student_id))
         student = result.scalar_one_or_none()
         if not student or not student.email:
@@ -739,14 +738,37 @@ async def send_teacher_confirmation_email(db: AsyncSession, student_id: int, pay
             return
 
         subject = "Tu docente ha confirmado tu clase"
-        body = f
+        # Formatear ID de reserva como ####-####
+        _raw = str(payment_booking_id)
+        _code8 = _raw.zfill(8)[-8:]
+        formatted_code = f"{_code8[:4]}-{_code8[4:]}"
 
-        <h2>¡Clase confirmada!</h2>
-        <p>Hola {student.first_name},</p>
-        <p>Tu docente ha confirmado la clase con ID de reserva <b>{payment_booking_id}</b>.</p>
-        <p>Gracias por utilizar OnlyCation.</p>
-        
-        
+        body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8" />
+        </head>
+        <body style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,Helvetica,sans-serif;color:#334155;">
+          <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;box-shadow:0 6px 18px rgba(17,24,39,0.06);overflow:hidden;">
+            <div style="padding:32px;text-align:center;border-bottom:1px solid #eef2f7;">
+              <div style="width:64px;height:64px;border-radius:50%;background:#e8f5f0;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="11" fill="#E8F5F0" stroke="#22C55E" stroke-width="0"/>
+                  <path d="M9 12.5l2 2 4-4" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <h1 style="margin:0;font-size:24px;line-height:1.2;color:#0f172a;font-weight:800;">¡Clase confirmada!</h1>
+            </div>
+            <div style="padding:28px 32px;">
+              <p style="margin:0 0 12px;">Hola <strong>{student.first_name}</strong>,</p>
+              <p style="margin:0 0 16px;">Tu docente ha confirmado la clase con ID de reserva <strong style="color:#0f172a">{formatted_code}</strong>.</p>
+              <p style="margin:0;">Puedes revisar los detalles de la clase en tu panel y prepararte para la sesión. ¡Gracias por confiar en OnlyCation!</p>
+            </div>
+          </div>
+        </body>
+        </html>
+        """
 
         message = MessageSchema(
             subject=subject,
@@ -761,58 +783,58 @@ async def send_teacher_confirmation_email(db: AsyncSession, student_id: int, pay
     except Exception as e:
         logger.error(f"Error enviando correo de confirmación docente: {e}")
 
-"""
-
-async def send_teacher_confirmation_email(db: AsyncSession, student_id: int, payment_booking_id: int):
-    try:
-        # 🔹 Forzar correo de prueba (ignora el del estudiante)
-        test_email = "rcnc28sumx1@gmail.com"  
-
-        subject = "Tu docente ha confirmado tu clase"
-        body = f"""
-        <h2>¡Clase confirmada!</h2>
-        <p>Hola,</p>
-        <p>Tu docente ha confirmado la clase con ID de reserva <b>{payment_booking_id}</b>.</p>
-        <p>Este correo fue enviado como prueba.</p>
-        """
-
-        message = MessageSchema(
-            subject=subject,
-            recipients=[test_email],  # 👈 siempre manda a este correo
-            body=body,
-            subtype=MessageType.html
-        )
-
-        fm = FastMail(conf)
-        await fm.send_message(message)
-        logger.info(f"Correo de prueba enviado a {test_email}")
-    except Exception as e:
-        logger.error(f"Error enviando correo de confirmación docente: {e}")
-
-
 
 async def send_student_confirmation_email(db: AsyncSession, teacher_id: int, payment_booking_id: int):
     try:
-        # 🔹 Por ahora, también forzamos un correo de prueba
-        test_email = "rcnc28sumx1@gmail.com"
+        # Buscar al docente destinatario
+        result = await db.execute(select(User).where(User.id == teacher_id))
+        teacher = result.scalar_one_or_none()
+        if not teacher or not teacher.email:
+            logger.error(f"No se encontró email para el docente con ID {teacher_id}")
+            return
 
         subject = "Tu estudiante ha confirmado la clase"
+        # Formatear ID de reserva como ####-####
+        _raw = str(payment_booking_id)
+        _code8 = _raw.zfill(8)[-8:]
+        formatted_code = f"{_code8[:4]}-{_code8[4:]}"
+
         body = f"""
-        <h2>¡Clase confirmada!</h2>
-        <p>Hola,</p>
-        <p>Tu estudiante ha confirmado la clase con ID de reserva <b>{payment_booking_id}</b>.</p>
-        <p>Este correo fue enviado como prueba.</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8" />
+        </head>
+        <body style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,Helvetica,sans-serif;color:#334155;">
+          <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;box-shadow:0 6px 18px rgba(17,24,39,0.06);overflow:hidden;">
+            <div style="padding:32px;text-align:center;border-bottom:1px solid #eef2f7;">
+              <div style="width:64px;height:64px;border-radius:50%;background:#e8f5f0;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="11" fill="#E8F5F0" stroke="#22C55E" stroke-width="0"/>
+                  <path d="M9 12.5l2 2 4-4" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <h1 style="margin:0;font-size:24px;line-height:1.2;color:#0f172a;font-weight:800;">¡Clase confirmada!</h1>
+            </div>
+            <div style="padding:28px 32px;">
+              <p style="margin:0 0 12px;">Hola <strong>{teacher.first_name}</strong>,</p>
+              <p style="margin:0 0 16px;">Tu estudiante ha confirmado la clase con ID de reserva <strong style="color:#0f172a">{formatted_code}</strong>.</p>
+              <p style="margin:0;">Puedes revisar los detalles de la clase y prepararte para la sesión. ¡Gracias por tu dedicación!</p>
+            </div>
+          </div>
+        </body>
+        </html>
         """
 
         message = MessageSchema(
             subject=subject,
-            recipients=[test_email],  # 👈 igual que el otro, se envía fijo
+            recipients=[teacher.email],
             body=body,
             subtype=MessageType.html
         )
 
         fm = FastMail(conf)
         await fm.send_message(message)
-        logger.info(f"Correo de prueba enviado a {test_email}")
+        logger.info(f"Correo de confirmación de estudiante enviado al docente {teacher.email}")
     except Exception as e:
         logger.error(f"Error enviando correo de confirmación de estudiante: {e}")

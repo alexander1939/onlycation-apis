@@ -126,16 +126,41 @@ async def get_chat_previews(
             user_role=current_user["role"]
         )
 
-        previews: list[ChatPreview] = []
+        # Filtrar: SOLO chats con una reserva ACTIVA (en curso o futura) entre alumno-docente
+        active_summaries: list[ChatSummaryResponse] = []
         for s in summaries:
-            last_preview = s.last_message.content if s.last_message else None
-            last_at = s.last_message.created_at if s.last_message else None
+            try:
+                if await ChatService.has_active_booking_between(db, s.student_id, s.teacher_id):
+                    active_summaries.append(s)
+            except Exception:
+                continue
+
+        # Deduplicar por pareja alumno-docente
+        # Preferir el que tiene último mensaje; si ambos/no hay, elegir el más reciente por (last_message_at or updated_at)
+        def sort_key(s: ChatSummaryResponse):
+            ts = s.last_message.created_at if s.last_message else s.updated_at
+            has_msg = 1 if s.last_message else 0
+            return (has_msg, ts)
+
+        sorted_by_pref = sorted(active_summaries, key=sort_key, reverse=True)
+
+        seen_pairs: set[tuple[int, int]] = set()
+        unique_summaries: list[ChatSummaryResponse] = []
+        for s in sorted_by_pref:
+            pair = (min(s.student_id, s.teacher_id), max(s.student_id, s.teacher_id))
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            unique_summaries.append(s)
+
+        previews: list[ChatPreview] = []
+        for s in unique_summaries:
             previews.append(
                 ChatPreview(
                     chat_id=s.chat_id,
                     participant=s.participant,
-                    last_message_preview=last_preview,
-                    last_message_at=last_at,
+                    last_message_preview=s.last_message.content if s.last_message else None,
+                    last_message_at=s.last_message.created_at if s.last_message else None,
                     unread_count=s.unread_count,
                 )
             )

@@ -23,7 +23,7 @@ async def get_upcoming_bookings_for_user(
     - Si el usuario es docente: reservas donde Availability.user_id == user_id
     - Si el usuario es alumno: reservas donde Booking.user_id == user_id
     - Considera ambos casos (OR), así funciona igual para cualquiera de los roles
-    - Sólo reservas con start_time > ahora (zona MX: UTC-6)
+    - Mostrar reservas en curso o futuras: end_time > ahora (zona MX: UTC-6)
     - Excluye reservas con status 'cancelled'
     - Incluye: materia (Document.expertise_area del docente) y modalidad (Preference.modality.name)
     - participant_role: "teacher" o "student" respecto al usuario autenticado
@@ -42,7 +42,7 @@ async def get_upcoming_bookings_for_user(
         select(Booking)
         .join(Availability, Booking.availability_id == Availability.id)
         .where(
-            Booking.start_time > current_time,
+            Booking.end_time > current_time,
             or_(
                 Availability.user_id == user_id,  # docente
                 Booking.user_id == user_id        # alumno
@@ -124,7 +124,7 @@ async def get_bookings_by_status_for_user(
 ) -> Dict:
     """
     Lista reservas del usuario autenticado por estado solicitado.
-    - upcoming: futuras (start_time > ahora) excluyendo canceladas
+    - upcoming: en curso o futuras (end_time > ahora) excluyendo canceladas
     - past: finalizadas (end_time <= ahora)
     - cancelled: con status 'cancelled'
     - all: todas en las que participa
@@ -145,7 +145,7 @@ async def get_bookings_by_status_for_user(
     )
 
     if status == "upcoming":
-        base = base.where(Booking.start_time > current_time)
+        base = base.where(Booking.end_time > current_time)
         if cancelled_status_id is not None:
             base = base.where(Booking.status_id != cancelled_status_id)
     elif status == "past":

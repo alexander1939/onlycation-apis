@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 
 class ActivationCheckData(BaseModel):
@@ -10,6 +10,9 @@ class ActivationCheckData(BaseModel):
     has_video: bool
     has_documents: bool
     missing: List[str]
+    # Opcionales para reflejar estado de Stripe Connect
+    stripe_status: Optional[str] = None
+    stripe_setup_url: Optional[str] = None
 
 
 class ActivationCheckResponse(BaseModel):

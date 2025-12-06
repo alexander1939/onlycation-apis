@@ -62,8 +62,8 @@ async def create_subscription_session(db: AsyncSession, user: User, plan_id: int
             mode="subscription",
             customer_email=user.email,
             line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
-            success_url="http://localhost:5173/?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="http://localhost:5173/",
+            success_url="https://onlycation.com/?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url="https://onlycation.com/",
             metadata={
                 "user_id": str(user.id),
                 "plan_id": str(plan.id)

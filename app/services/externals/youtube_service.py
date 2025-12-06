@@ -326,6 +326,15 @@ async def save_validated_video(db: AsyncSession, user_id: int, url_or_id: str) -
         # Extraer ID del video
         video_id = extract_video_id(url_or_id)
         
+        # Si este ID de YouTube ya está registrado por CUALQUIER usuario, devolver error legible
+        conflict_q = select(Video).where(Video.youtube_video_id == video_id)
+        conflict = (await db.execute(conflict_q)).scalar_one_or_none()
+        if conflict:
+            if conflict.user_id == user_id:
+                raise ValueError("Este video ya está guardado en tu cuenta")
+            else:
+                raise ValueError("Este video ya fue registrado por otro docente. Por favor, selecciona un video distinto.")
+         
         # Verificar si el usuario ya tiene un video (restricción UNIQUE por usuario)
         existing_video_query = select(Video).where(Video.user_id == user_id)
         result = await db.execute(existing_video_query)
@@ -433,6 +442,13 @@ async def update_user_video(db: AsyncSession, user_id: int, url_or_id: str) -> V
         # 3. Extraer ID del nuevo video
         new_video_id = extract_video_id(url_or_id)
         
+        # 3.b Evitar conflictos con otros usuarios por UNIQUE youtube_video_id
+        if new_video_id != existing_video.youtube_video_id:
+            conflict_q = select(Video).where(Video.youtube_video_id == new_video_id)
+            conflict = (await db.execute(conflict_q)).scalar_one_or_none()
+            if conflict and conflict.user_id != user_id:
+                raise ValueError("Este video ya fue registrado por otro docente. Por favor, selecciona otro video.")
+         
         # 4. Actualizar los campos del video existente
         existing_video.youtube_video_id = new_video_id
         existing_video.title = video_metadata.title
@@ -455,5 +471,3 @@ async def update_user_video(db: AsyncSession, user_id: int, url_or_id: str) -> V
     except Exception as e:
         await db.rollback()
         raise ValueError(f"Error al actualizar el video: {str(e)}")
-
-

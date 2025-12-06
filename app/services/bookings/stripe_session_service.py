@@ -2,8 +2,28 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from fastapi import HTTPException
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
+
+# Helpers de normalización a hora local (MX, UTC-06) como datetime naive
+def _to_mx_local_naive(d: datetime | str) -> datetime:
+    """
+    Convierte un datetime o string ISO (con o sin 'Z') a hora local de MX (UTC-06) sin tz.
+    - Si el datetime es tz-aware, se convierte desde su tz a UTC y luego se resta 6h para obtener hora local.
+    - Si es naive, se asume ya en hora local MX y se deja igual.
+    """
+    if isinstance(d, str):
+        try:
+            d = datetime.fromisoformat(d.replace("Z", "+00:00"))
+        except Exception:
+            d = datetime.fromisoformat(d)
+    if getattr(d, "tzinfo", None) is not None:
+        d = d.astimezone(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)
+    return d
+
+def _now_mx_local() -> datetime:
+    """Devuelve 'ahora' en hora local de MX (UTC-06) como datetime naive."""
+    return datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=6)
 
 from app.models.teachers.availability import Availability
 from app.models.teachers.price import Price
@@ -47,8 +67,8 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         # 3. Parsear y validar segmentos (HH:00, día correcto)
         segments = []
         for it in booking_data.items:
-            s = datetime.fromisoformat(it.start_time) if isinstance(it.start_time, str) else it.start_time
-            e = datetime.fromisoformat(it.end_time) if isinstance(it.end_time, str) else it.end_time
+            s = _to_mx_local_naive(it.start_time)
+            e = _to_mx_local_naive(it.end_time)
             if (s.minute or s.second or s.microsecond or e.minute or e.second or e.microsecond):
                 raise HTTPException(status_code=400, detail="Los horarios deben ser en horas exactas (ej: 09:00, 10:00)")
             if e <= s:
@@ -122,7 +142,8 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
                 raise HTTPException(status_code=400, detail="Ya tienes una reserva que traslapa con alguno de los tramos seleccionados")
 
         # 6. Anticipación mínima sobre el primer inicio
-        if ((min(s["start"] for s in segments) - datetime.now()).total_seconds() / 3600) < 1:
+        min_start = min(s["start"] for s in segments)
+        if ((min_start - _now_mx_local()).total_seconds() / 3600) < 1:
             raise HTTPException(status_code=400, detail="Debes reservar la clase con al menos 1 hora de anticipación")
 
         # 7. Obtener precio y wallet/commissions
@@ -197,8 +218,8 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             "payment_method_types": ["card"],
             "line_items": line_items,
             "mode": "payment",
-            "success_url": "http://localhost:5173/catalog/teachers/?session_id={CHECKOUT_SESSION_ID}",
-            "cancel_url": "http://localhost:5173/",
+            "success_url": "https://onlycation.com/catalog/teachers/?session_id={CHECKOUT_SESSION_ID}",
+            "cancel_url": "https://onlycation.com",
             "customer_email": user.email,
             "metadata": {
                 "booking_mode": "multi",
@@ -231,16 +252,9 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         return {"url": session.url, "session_id": session.id, "price": total_amount_cents / 100.0}
 
     # 2. Convertir fechas para validaciones
-    if isinstance(booking_data.start_time, str):
-        requested_start = datetime.fromisoformat(booking_data.start_time)
-    else:
-        requested_start = booking_data.start_time
+    requested_start = _to_mx_local_naive(booking_data.start_time)
+    requested_end = _to_mx_local_naive(booking_data.end_time)
         
-    if isinstance(booking_data.end_time, str):
-        requested_end = datetime.fromisoformat(booking_data.end_time)
-    else:
-        requested_end = booking_data.end_time
-
     # 2.b Validar que los horarios sean en horas exactas (HH:00) para garantizar Asesoriass corridos
     if (
         requested_start.minute != 0 or requested_start.second != 0 or requested_start.microsecond != 0 or
@@ -252,7 +266,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         )
 
     # 3. Validar que no se puede reservar en fechas pasadas
-    current_time = datetime.now()
+    current_time = _now_mx_local()
     if requested_start <= current_time:
         raise HTTPException(
             status_code=400,
@@ -357,7 +371,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
         )
 
     # 7. Validar que la reserva tiene al menos 1 hora de anticipación
-    time_difference = (requested_start - current_time).total_seconds() / 3600  # en horas
+    time_difference = (requested_start - current_time).total_seconds() / 3600  # en horas, en MX local
     if time_difference < 1:
         raise HTTPException(
             status_code=400,
@@ -383,23 +397,13 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
     teacher_wallet = await get_teacher_wallet(db, teacher_id)
 
     # 7. Calcular el precio total basado en las horas
-    if isinstance(booking_data.start_time, str):
-        start_time = datetime.fromisoformat(booking_data.start_time)
-    else:
-        start_time = booking_data.start_time
-        
-    if isinstance(booking_data.end_time, str):
-        end_time = datetime.fromisoformat(booking_data.end_time)
-    else:
-        end_time = booking_data.end_time
-        
-    total_hours = (end_time - start_time).total_seconds() / 3600
+    total_hours = (requested_end - requested_start).total_seconds() / 3600
 
     if total_hours <= 0:
         raise HTTPException(status_code=400, detail="Las horas deben ser positivas")
 
     # Asegurar múltiplos de 1 hora exacta (Asesoriass corridos)
-    if ((end_time - start_time).total_seconds() % 3600) != 0:
+    if ((requested_end - requested_start).total_seconds() % 3600) != 0:
         raise HTTPException(status_code=400, detail="La duración debe ser en múltiplos de 1 hora (Asesoriass corridos)")
 
     # Calcular precio global (single): primeras 2 horas base, desde 3ra hora extra
@@ -420,7 +424,7 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
                     "currency": "mxn",
                     "product_data": {
                         "name": f"Clase con {disponibilidad.user.first_name} {disponibilidad.user.last_name}",
-                        "description": f"Clase de {int(total_hours)} hora(s) - {start_time.strftime('%d/%m/%Y %H:%M')} a {end_time.strftime('%d/%m/%Y %H:%M')}",
+                        "description": f"Clase de {int(total_hours)} hora(s) - {requested_start.strftime('%d/%m/%Y %H:%M')} a {requested_end.strftime('%d/%m/%Y %H:%M')}",
                     },
                     "unit_amount": total_amount_cents,
                 },
@@ -428,8 +432,8 @@ async def create_booking_payment_session(db: AsyncSession, user: User, booking_d
             }
         ],
         "mode": "payment",
-        "success_url": "http://localhost:5173/catalog/teachers/?session_id={CHECKOUT_SESSION_ID}",
-        "cancel_url": "http://localhost:5173/",
+        "success_url": "https://onlycation.com/catalog/teachers/?session_id={CHECKOUT_SESSION_ID}",
+        "cancel_url": "https://onlycation.com/",
         "customer_email": user.email,  # Email del estudiante pre-llenado automáticamente
         "metadata": {
             "user_id": str(user.id),
@@ -507,8 +511,8 @@ async def calculate_booking_quote(db: AsyncSession, request):
         # 2) Parsear segmentos y validar HH:00, día correcto y que cada segmento no cruce de día
         segments = []
         for it in request.items:
-            s = it.start_time if not isinstance(it.start_time, str) else datetime.fromisoformat(it.start_time)
-            e = it.end_time if not isinstance(it.end_time, str) else datetime.fromisoformat(it.end_time)
+            s = _to_mx_local_naive(it.start_time)
+            e = _to_mx_local_naive(it.end_time)
             if (s.minute or s.second or s.microsecond or e.minute or e.second or e.microsecond):
                 raise HTTPException(status_code=400, detail="Los horarios deben ser en horas exactas (ej: 09:00, 10:00)")
             if e <= s:
@@ -629,8 +633,8 @@ async def calculate_booking_quote(db: AsyncSession, request):
         raise HTTPException(status_code=404, detail="Disponibilidad no encontrada")
 
     # 2) Fechas y validaciones
-    s = request.start_time if not isinstance(request.start_time, str) else datetime.fromisoformat(request.start_time)
-    e = request.end_time if not isinstance(request.end_time, str) else datetime.fromisoformat(request.end_time)
+    s = _to_mx_local_naive(request.start_time)
+    e = _to_mx_local_naive(request.end_time)
     if (s.minute or s.second or s.microsecond or e.minute or e.second or e.microsecond):
         raise HTTPException(status_code=400, detail="Los horarios deben ser en horas exactas (ej: 09:00, 10:00)")
     if e <= s:
