@@ -193,7 +193,11 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def prometheus_request_counter(request: Request, call_next):
-        requests_counter.inc()
+        # Solo contar solicitudes a las rutas de la API (prefijo /api)
+        # y evitar contar el propio endpoint /metrics
+        path = request.url.path
+        if path.startswith("/api"):
+            requests_counter.inc()
         response = await call_next(request)
         return response
 
