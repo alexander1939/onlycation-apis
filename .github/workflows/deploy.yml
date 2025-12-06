@@ -1,0 +1,48 @@
+name: Pipeline Maestro CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  run-all-pipelines:
+    name: Ejecutar workflows hijos
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v3
+
+      - name: Ejecutar pruebas automatizadas (pytest)
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: "paytest.yml"
+          ref: "main"
+
+      - name: Ejecutar análisis de seguridad OWASP ZAP
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: "owasp_zap_scan.yml"
+          ref: "main"
+
+      - name: Ejecutar análisis SonarCloud
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: "sonarcloud.yml"
+          ref: "main"
+
+      - name: Construir y publicar imagen Docker
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: "docker-buil.yml"
+          ref: "main"
+
+      - name: Confirmación del pipeline maestro
+        run: echo "Pipeline maestro ejecutado correctamente y validó todos los workflows hijos."

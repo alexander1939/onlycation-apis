@@ -32,12 +32,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          # Useful extras for CI
           pip install pytest pytest-cov cryptography
 
-      - name: Create .env for CI (SQLite) with valid Fernet key
+      - name: Create .env for CI
         run: |
-          # Generate a valid Fernet key (44-char urlsafe base64)
           FERNET_KEY=$(python - <<'PY'
           from cryptography.fernet import Fernet
           print(Fernet.generate_key().decode('utf-8'))
@@ -62,20 +60,13 @@ jobs:
           STRIPE_SECRET_KEY=sk_test_dummy
           STRIPE_PUBLIC_KEY=pk_test_dummy
           DOC_CIPHER_KEY=dummy_cipher_key
-          # Both names to satisfy any import sites
           EVIDENCE_KEY=$FERNET_KEY
           EVIDENCE_ENCRYPTION_KEY=$FERNET_KEY
           YOUTUBE_API_KEY=
-          LINKEDIN_CLIENT_ID=
-          LINKEDIN_CLIENT_SECRET=
-          LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/linkedin/callback
           EOF
-          echo "Created .env for CI (keys redacted):"
-          cat .env | sed 's/^\(.*PASSWORD\|.*SECRET\|.*KEY\)=.*/\1=***REDACTED***/'
 
-      - name: Run pytest with coverage
+      - name: Run pytest
         env:
-          # Ensure local .env is used by pydantic-settings
           Pydantic_env_file: .env
         run: |
           pytest -v --maxfail=1 --disable-warnings \
