@@ -1,34 +1,84 @@
-name: SonarCloud Analysis
+name: SonarCloud Analysis - Reusable
 
 on:
-  push:
-    branches: [ sonarcloud-setup ]
-  pull_request:
-    branches: [ main ]
+  workflow_call:
+    inputs:
+      branch:
+        required: false
+        type: string
+        default: ''
+      python_version:
+        required: false
+        type: string
+        default: '3.11'
+    secrets:
+      SONAR_TOKEN:
+        required: true
+      GITHUB_TOKEN:
+        required: true
 
 jobs:
   sonarcloud:
-    name: SonarCloud
     runs-on: ubuntu-latest
-
+    name: SonarCloud Analysis
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # necesario para un análisis completo
+          fetch-depth: 0
+          ref: ${{ inputs.branch }}
 
-      - name: Set up Python
+      - name: Set up Python ${{ inputs.python_version }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: ${{ inputs.python_version }}
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt || true
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest-cov
+
+      - name: Run tests with coverage (if not already done)
+        run: |
+          if [ ! -f coverage.xml ]; then
+            echo "Generando reporte de cobertura para SonarCloud..."
+            # Create minimal .env for tests
+            cat > .env << EOF
+            SQLALCHEMY_DATABASE_URI=sqlite:///test.db
+            SECRET_KEY=sonar_test_key
+            ENVIRONMENT=test
+            EOF
+            
+            # Run tests with coverage
+            pytest --cov=app --cov-report=xml:coverage.xml --junitxml=test-results.xml -v || true
+          else
+            echo "Reporte de cobertura ya existe, reutilizando..."
+          fi
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
-        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=onlycation-apis
+            -Dsonar.organization=milahuu6
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.test.exclusions=tests/**
+            -Dsonar.python.version=3.11
+            -Dsonar.verbose=true
+
+      - name: Upload SonarCloud reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonarcloud-reports-${{ github.run_id }}
+          path: |
+            coverage.xml
+            test-results.xml
+          retention-days: 30

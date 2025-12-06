@@ -1,25 +1,169 @@
-name: Build y Push de Docker
+name: Build y Push de Docker - Reusable
 
 on:
-  push:
-    branches: [ "main" ]
+  workflow_call:
+    inputs:
+      docker_username:
+        required: false
+        type: string
+        default: ''
+      image_name:
+        required: false
+        type: string
+        default: 'onlycation-apis'
+      image_tag:
+        required: false
+        type: string
+        default: 'latest'
+      push_image:
+        required: false
+        type: boolean
+        default: true
+      build_args:
+        required: false
+        type: string
+        default: ''
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+    outputs:
+      image_url:
+        description: "URL completa de la imagen Docker"
+        value: ${{ jobs.build.outputs.image_url }}
+      build_status:
+        description: "Estado de la construcción"
+        value: ${{ jobs.build.outputs.build_status }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    name: Build and Push Docker Image
+    outputs:
+      image_url: ${{ steps.set-outputs.outputs.image_url }}
+      build_status: ${{ steps.set-outputs.outputs.build_status }}
+    
     steps:
       - name: Checkout del repositorio
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Login en Docker Hub
-        uses: docker/login-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ inputs.docker_username || secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Construir y publicar imagen Docker
-        uses: docker/build-push-action@v4
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          push: true
-          tags: milahuu6/onlycation-apis:latest
+          images: |
+            ${{ inputs.docker_username || secrets.DOCKERHUB_USERNAME }}/${{ inputs.image_name }}
+          tags: |
+            type=raw,value=${{ inputs.image_tag }}
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-,format=short
+          flavor: |
+            latest=${{ inputs.image_tag == 'latest' }}
+
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ inputs.push_image }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            ${{ inputs.build_args }}
+          platforms: linux/amd64,linux/arm64
+
+      - name: Verify image
+        if: ${{ inputs.push_image }}
+        run: |
+          echo "✅ Imagen construida exitosamente"
+          echo "📦 Tags generados:"
+          echo "${{ steps.meta.outputs.tags }}"
+          
+          # Pull and test the image
+          IMAGE_NAME="${{ inputs.docker_username || secrets.DOCKERHUB_USERNAME }}/${{ inputs.image_name }}:${{ inputs.image_tag }}"
+          echo "🧪 Verificando imagen: $IMAGE_NAME"
+          
+          docker pull $IMAGE_NAME
+          
+          # Check image size
+          docker images $IMAGE_NAME --format "Tamaño: {{.Size}}"
+
+      - name: Set outputs
+        id: set-outputs
+        run: |
+          IMAGE_NAME="${{ inputs.docker_username || secrets.DOCKERHUB_USERNAME }}/${{ inputs.image_name }}:${{ inputs.image_tag }}"
+          echo "image_url=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          
+          if [ "${{ steps.build-and-push.outcome }}" == "success" ]; then
+            echo "build_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "build_status=failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-build-logs-${{ github.run_id }}
+          path: |
+            /tmp/docker-build-*.log
+          retention-days: 7
+
+      - name: Generate build report
+        run: |
+          cat > docker-build-report.md << EOF
+          # 📦 Reporte de Construcción Docker
+          
+          ## Información del Build
+          - **Fecha**: $(date)
+          - **Commit**: ${{ github.sha }}
+          - **Workflow**: ${{ github.workflow }}
+          - **Ejecutado por**: ${{ github.actor }}
+          
+          ## Imagen Docker
+          - **Nombre**: ${{ inputs.docker_username || secrets.DOCKERHUB_USERNAME }}/${{ inputs.image_name }}
+          - **Tag**: ${{ inputs.image_tag }}
+          - **URL completa**: ${{ inputs.docker_username || secrets.DOCKERHUB_USERNAME }}/${{ inputs.image_name }}:${{ inputs.image_tag }}
+          - **Push habilitado**: ${{ inputs.push_image }}
+          
+          ## Resultado
+          - **Estado**: ${{ steps.build-and-push.outcome }}
+          - **Cache utilizado**: Sí
+          - **Multi-arch**: linux/amd64,linux/arm64
+          
+          ## Próximos pasos
+          La imagen está disponible para despliegue.
+          
+          \`\`\`bash
+          docker pull ${{ inputs.docker_username || secrets.DOCKERHUB_USERNAME }}/${{ inputs.image_name }}:${{ inputs.image_tag }}
+          \`\`\`
+          EOF
+          
+          cat docker-build-report.md
+
+      - name: Upload build report
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-build-report-${{ github.run_id }}
+          path: docker-build-report.md

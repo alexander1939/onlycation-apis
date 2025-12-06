@@ -1,69 +1,232 @@
-name: Deploy CI/CD (Orquestación)
+name: CI/CD Pipeline Principal
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Entorno de despliegue'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: 'Saltar pruebas'
+        required: false
+        default: false
+        type: boolean
+      full_security_scan:
+        description: 'Escaneo de seguridad completo'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  orchestration:
+  # 1. Coordinador y preparación
+  coordinator:
     runs-on: ubuntu-latest
-
+    name: 🚀 Coordinador CI/CD
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      should_build: ${{ steps.set-env.outputs.should_build }}
+      branch_name: ${{ steps.get-branch.outputs.branch }}
+    
     steps:
+      - name: Obtener nombre de rama
+        id: get-branch
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "branch=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          fi
 
-      # -------------------------------
-      # 1. Checkout del repositorio
-      # -------------------------------
-      - name: Checkout del repositorio
-        uses: actions/checkout@v3
+      - name: Determinar entorno y acciones
+        id: set-env
+        run: |
+          # Determinar entorno basado en rama o input manual
+          if [ "${{ github.event.inputs.environment }}" != "" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            ENV="production"
+          elif [ "${{ github.ref }}" == "refs/heads/develop" ]; then
+            ENV="staging"
+          else
+            ENV="development"
+          fi
+          
+          # Determinar si se debe construir Docker
+          if [[ "$ENV" == "production" || "$ENV" == "staging" ]] && [[ "${{ github.event_name }}" == "push" ]]; then
+            SHOULD_BUILD="true"
+          else
+            SHOULD_BUILD="false"
+          fi
+          
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "should_build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
+          
+          echo "🎯 Entorno: $ENV"
+          echo "🔨 Construir Docker: $SHOULD_BUILD"
+          echo "🌿 Rama: ${{ steps.get-branch.outputs.branch }}"
 
-      # -------------------------------
-      # 2. Instalación de dependencias
-      # -------------------------------
-      - name: Instalar Python
-        uses: actions/setup-python@v4
+      - name: Mostrar información del pipeline
+        run: |
+          echo "========================================"
+          echo "🚀 INICIANDO PIPELINE CI/CD"
+          echo "========================================"
+          echo "📅 Fecha: $(date)"
+          echo "🔗 SHA: ${{ github.sha }}"
+          echo "👤 Usuario: ${{ github.actor }}"
+          echo "🌿 Rama: ${{ steps.get-branch.outputs.branch }}"
+          echo "🎯 Entorno: ${{ steps.set-env.outputs.environment }}"
+          echo "🔨 Construir Docker: ${{ steps.set-env.outputs.should_build }}"
+          echo "========================================"
+
+  # 2. Pruebas unitarias (siempre ejecutar, a menos que se salte explícitamente)
+  run-tests:
+    runs-on: ubuntu-latest
+    name: ✅ Pruebas Unitarias
+    needs: coordinator
+    if: ${{ !github.event.inputs.skip_tests }}
+    
+    uses: ./.github/workflows/pytest.yml
+    with:
+      environment: ${{ needs.coordinator.outputs.environment }}
+      python_version: '3.11'
+    secrets: inherit
+
+  # 3. Análisis de seguridad (solo en staging/production)
+  security-scan:
+    runs-on: ubuntu-latest
+    name: 🔒 Escaneo de Seguridad
+    needs: coordinator
+    if: |
+      (needs.coordinator.outputs.environment == 'production' || 
+       needs.coordinator.outputs.environment == 'staging') &&
+      !failure() &&
+      !cancelled()
+    
+    uses: ./.github/workflows/owasp-zap.yml
+    with:
+      scan_type: ${{ github.event.inputs.full_security_scan && 'full' || 'baseline' }}
+      scan_timeout: ${{ github.event.inputs.full_security_scan && '15' || '5' }}
+      port: 8000
+    secrets: inherit
+
+  # 4. Análisis de código con SonarCloud (solo en staging/production)
+  code-analysis:
+    runs-on: ubuntu-latest
+    name: 📊 Análisis de Código
+    needs: coordinator
+    if: |
+      (needs.coordinator.outputs.environment == 'production' || 
+       needs.coordinator.outputs.environment == 'staging') &&
+      !failure() &&
+      !cancelled()
+    
+    uses: ./.github/workflows/sonarcloud.yml
+    with:
+      branch: ${{ needs.coordinator.outputs.branch_name }}
+      python_version: '3.11'
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 5. Construcción de imagen Docker (solo si pasa todo lo anterior)
+  build-docker:
+    runs-on: ubuntu-latest
+    name: 🐳 Construir Imagen Docker
+    needs: [coordinator, run-tests, security-scan, code-analysis]
+    if: |
+      needs.coordinator.outputs.should_build == 'true' &&
+      needs.run-tests.result == 'success' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'completed' || needs.security-scan.result == 'skipped') &&
+      (needs.code-analysis.result == 'success' || needs.code-analysis.result == 'skipped') &&
+      !failure() &&
+      !cancelled()
+    
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      docker_username: milahuu6
+      image_name: onlycation-apis
+      image_tag: ${{ needs.coordinator.outputs.environment == 'production' && 'latest' || 'staging' }}
+      push_image: true
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  # 6. Notificación y reporte final
+  final-report:
+    runs-on: ubuntu-latest
+    name: 📋 Reporte Final
+    needs: [coordinator, run-tests, security-scan, code-analysis, build-docker]
+    if: always()
+    
+    steps:
+      - name: Generar reporte del pipeline
+        run: |
+          echo "# 🎉 REPORTE FINAL DEL PIPELINE CI/CD" > pipeline-report.md
+          echo "## Fecha: $(date)" >> pipeline-report.md
+          echo "## SHA del commit: ${{ github.sha }}" >> pipeline-report.md
+          echo "## Rama: ${{ needs.coordinator.outputs.branch_name }}" >> pipeline-report.md
+          echo "## Entorno: ${{ needs.coordinator.outputs.environment }}" >> pipeline-report.md
+          echo "" >> pipeline-report.md
+          
+          echo "## 📊 ESTADO DE LAS ETAPAS:" >> pipeline-report.md
+          echo "1. **Coordinador**: ${{ needs.coordinator.result }}" >> pipeline-report.md
+          echo "2. **Pruebas Unitarias**: ${{ needs.run-tests.result }}" >> pipeline-report.md
+          echo "   - Cobertura: ${{ needs.run-tests.outputs.coverage_percentage || 'N/A' }}%" >> pipeline-report.md
+          echo "3. **Escaneo Seguridad**: ${{ needs.security-scan.result }}" >> pipeline-report.md
+          echo "   - Vulnerabilidades: ${{ needs.security-scan.outputs.vulnerabilities_found || '0' }}" >> pipeline-report.md
+          echo "4. **Análisis Código**: ${{ needs.code-analysis.result }}" >> pipeline-report.md
+          echo "5. **Construcción Docker**: ${{ needs.build-docker.result || 'skipped' }}" >> pipeline-report.md
+          echo "   - Imagen: ${{ needs.build-docker.outputs.image_url || 'N/A' }}" >> pipeline-report.md
+          echo "" >> pipeline-report.md
+          
+          if [[ "${{ needs.build-docker.result }}" == "success" ]]; then
+            echo "## 🚀 DESPLIEGUE LISTO" >> pipeline-report.md
+            echo "La imagen Docker está disponible para despliegue:" >> pipeline-report.md
+            echo "\`\`\`bash" >> pipeline-report.md
+            echo "docker pull ${{ needs.build-docker.outputs.image_url }}" >> pipeline-report.md
+            echo "\`\`\`" >> pipeline-report.md
+          elif [[ "${{ needs.run-tests.result }}" == "success" ]]; then
+            echo "## ✅ PRUEBAS EXITOSAS" >> pipeline-report.md
+            echo "El código pasa todas las pruebas. Listo para merge a main." >> pipeline-report.md
+          else
+            echo "## ❌ PIPELINE FALLIDO" >> pipeline-report.md
+            echo "Revisa los logs para más detalles." >> pipeline-report.md
+          fi
+          
+          echo "" >> pipeline-report.md
+          echo "---" >> pipeline-report.md
+          echo "*Pipeline ejecutado automáticamente por GitHub Actions*" >> pipeline-report.md
+          
+          # Mostrar en consola
+          cat pipeline-report.md
+
+      - name: Subir reporte como artifact
+        uses: actions/upload-artifact@v4
         with:
-          python-version: '3.11'
+          name: pipeline-final-report-${{ github.run_id }}
+          path: pipeline-report.md
+          retention-days: 30
 
-      - name: Instalar dependencias
+      - name: Notificar estado
+        if: always()
         run: |
-          pip install --no-cache-dir -r requirements.txt
-          echo "Dependencias instaladas correctamente."
-
-      # -------------------------------
-      # 3. Verificar que las pruebas automatizadas YA existen
-      # -------------------------------
-      - name: Verificar pipeline de pruebas existentes
-        run: |
-          echo "Validando que las pruebas automatizadas están configuradas:"
-          echo "- PyTest: pytests.yml"
-          echo "- Seguridad: owasp_zap_scan.yml"
-          echo "- Calidad del código: sonarcloud.yml"
-          echo "Pruebas automatizadas ya gestionadas por workflows separados."
-
-      # -------------------------------
-      # 4. Verificar que la imagen Docker YA se construye
-      # -------------------------------
-      - name: Verificar pipeline de construcción Docker
-        run: |
-          echo "Validando que la construcción Docker está configurada:"
-          echo "- El archivo docker-buil.yml construye y hace push a Docker Hub."
-          echo "Construcción Docker ya gestionada por workflow separado."
-
-      # -------------------------------
-      # 5. Confirmar despliegue automático (Docker Hub)
-      # -------------------------------
-      - name: Confirmar despliegue automático (Docker Hub)
-        run: |
-          echo "La imagen Docker se despliega automáticamente a Docker Hub mediante docker-buil.yml."
-          echo "Este workflow valida que el proceso de construcción y despliegue está activo."
-
-      # -------------------------------
-      # 6. Logs finales
-      # -------------------------------
-      - name: Logs del pipeline
-        run: |
-          echo "✓ Pipeline de orquestación ejecutado correctamente."
-          echo "✓ CI/CD validado."
-          echo "Revisa los demás workflows para detalles de Docker, Pruebas y Seguridad."
+          echo "========================================"
+          echo "🏁 PIPELINE COMPLETADO"
+          echo "========================================"
+          echo "Resultado: ${{ job.status }}"
+          echo "Trabajos ejecutados:"
+          echo "  - Coordinador: ${{ needs.coordinator.result }}"
+          echo "  - Pruebas: ${{ needs.run-tests.result }}"
+          echo "  - Seguridad: ${{ needs.security-scan.result }}"
+          echo "  - Análisis: ${{ needs.code-analysis.result }}"
+          echo "  - Docker: ${{ needs.build-docker.result || 'skipped' }}"
+          echo "========================================"
